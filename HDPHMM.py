@@ -6,20 +6,13 @@ Hierarchical Dirichlet Process Hidden Markov Model
 # standard imports
 import numpy as np
 import pandas as pd
-import math
 import random
-import scipy
 from scipy import special
-import os
-import sys
-import warnings
 import copy
-from collections import defaultdict  # needed to handle "infinite" (i.e. dynamic sized) matrices
 from terminaltables import DoubleTable  # use this to print parameter matrices for humans
 from tqdm import tqdm  # add a progress bar to Gibbs sampling
 from functools import reduce, partial
 import multiprocessing
-from sympy import log as splog
 from sympy.functions.combinatorial.numbers import stirling  # stirling numbers
 import itertools  # for infinite generators
 
@@ -35,12 +28,10 @@ def label_generator(labels):
         if x < len(labels):
             yield labels[x] + z
             x += 1
-        if x==len(labels):
+        if x == len(labels):
             y += 1
             z = str(y)
             x = 0
-    raise GeneratorExit("Infinite labels exhausted")
-    return
 
 
 # used to choose from new states after resampling latent states
@@ -100,7 +91,8 @@ class Chain(object):
         print_len = min(print_len-1, self.T-1)
         return 'Chain size={T}, seq={s}'.format(
             T=self.T,
-            s=['{s}:{e}'.format(s=s, e=e) for s, e in zip(self.latent_sequence, self.emission_sequence)][:print_len] + ['...'])
+            s=['{s}:{e}'.format(s=s, e=e) for s, e in
+               zip(self.latent_sequence, self.emission_sequence)][:print_len] + ['...'])
 
     # convert latent and observed sequence into more convenient numpy array
     def tabulate(self):
@@ -117,13 +109,15 @@ class Chain(object):
 
     def neglogp_sequence(self, p_initial, p_emission, p_transition):
         # edge case: zero-length sequence
-        if self.T==0:
+        if self.T == 0:
             return 0
 
         # get probability of starting state & emission, and all remaining transition & emissions
         # np.prod([])==1, so this is safe
-        p_initial = (np.log(p_initial[self.latent_sequence[0]]) + np.log(p_emission[self.latent_sequence[0]][self.emission_sequence[0]]))
-        p_remainder = [np.log(p_emission[self.latent_sequence[t]][self.emission_sequence[t]]) + np.log(p_transition[self.latent_sequence[t-1]][self.latent_sequence[t]])
+        p_initial = (np.log(p_initial[self.latent_sequence[0]]) +
+                     np.log(p_emission[self.latent_sequence[0]][self.emission_sequence[0]]))
+        p_remainder = [np.log(p_emission[self.latent_sequence[t]][self.emission_sequence[t]]) +
+                       np.log(p_transition[self.latent_sequence[t-1]][self.latent_sequence[t]])
                        for t in range(1, self.T)]
 
         # take log and sum for result
@@ -131,7 +125,9 @@ class Chain(object):
 
     def resample_auxiliary_beam_variables(self, p_initial, p_transition):
         # find transition probabilities first
-        temp_p_transition = ([p_initial[self.latent_sequence[0]]] + [p_transition[self.latent_sequence[t]][self.latent_sequence[t+1]] for t in range(self.T-1)])
+        temp_p_transition = ([p_initial[self.latent_sequence[0]]] +
+                             [p_transition[self.latent_sequence[t]][self.latent_sequence[t+1]]
+                              for t in range(self.T-1)])
         # initialise u_t
         self.auxiliary_beam_variables = [np.random.uniform(0, p) for p in temp_p_transition]
 
@@ -140,38 +136,42 @@ class Chain(object):
         self.resample_auxiliary_beam_variables(p_initial, p_transition)
 
         # adjust latent sequence
-        self.latent_sequence = Chain._resample_latent_sequence_beam(
+        self.latent_sequence = Chain.resample_latent_sequence_static(
             (self.emission_sequence, self.auxiliary_beam_variables),
             states, p_initial, p_emission, p_transition)
 
     @staticmethod
-    def _resample_latent_sequence_beam(sequences, states, p_initial, p_emission, p_transition):
+    def resample_latent_sequence_static(sequences, states, p_initial, p_emission, p_transition):
         # extract size information
         emission_sequence, auxiliary_vars = sequences
-        T = len(emission_sequence)
+        t = len(emission_sequence)
 
         # edge case: zero-length sequence
-        if T==0:
+        if t == 0:
             return []
 
         # initialise historical P(s_t | u_{1:t}, y_{1:t}) and latent sequence
-        p_history = [None] * T
-        latent_sequence = [None]*T
+        p_history = [None] * t
+        latent_sequence = [None]*t
 
         # compute probability of state t (currently the starting state t==0)
-        p_history[0] = {s: p_initial[s] * p_emission[s][emission_sequence[0]] if p_initial[s] > auxiliary_vars[0] else 0 for s in states}
+        p_history[0] = {s: p_initial[s] * p_emission[s][emission_sequence[0]] if p_initial[s] > auxiliary_vars[0] else 0
+                        for s in states}
         # for remaining states, probabilities are function of emission and transition
-        for t in range(1, T):
+        for t in range(1, t):
             p_temp = {s2: sum(p_history[t-1][s1] for s1 in states if p_transition[s1][s2] > auxiliary_vars[t]) *
                       p_emission[s2][emission_sequence[t]] for s2 in states}
             p_temp_total = sum(p_temp.values())
             p_history[t] = {s: p_temp[s] / p_temp_total for s in states}
 
         # choose ending state
-        latent_sequence[T-1] = random.choices(tuple(p_history[T-1].keys()), weights=tuple(p_history[T-1].values()), k=1)[0]
+        latent_sequence[t-1] = random.choices(
+            tuple(p_history[t-1].keys()),
+            weights=tuple(p_history[t-1].values()),
+            k=1)[0]
 
         # work backwards to compute new latent sequence
-        for t in range(T-2, -1, -1):
+        for t in range(t-2, -1, -1):
             p_temp = {s1: p_history[t][s1] * p_transition[s1][latent_sequence[t+1]]
                       if p_transition[s1][latent_sequence[t+1]] > auxiliary_vars[t+1] else 0
                       for s1 in states}
@@ -182,7 +182,10 @@ class Chain(object):
 
 
 class HierarchicalDirichletProcessHiddenMarkovModel(object):
-    def __init__(self, emission_sequences, emissions=None, sticky=True,
+    def __init__(self,
+                 emission_sequences,
+                 emissions=None,
+                 sticky=True,
                  alpha_prior=lambda: np.random.gamma(2, 2),
                  gamma_prior=lambda: np.random.gamma(3, 3),
                  alpha_emission_prior=lambda: np.random.gamma(2, 2),
@@ -217,23 +220,23 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
 
         # store initial hyperparameter values
         self.alpha = 1
-        self.beta = 1
+        self.gamma = 1
         self.alpha_emission = 1
-        self.beta_emission = 1
+        self.gamma_emission = 1
         self.kappa = 0.2 if self.sticky else 0.0
 
         # use internal properties to store fit parameters
         self.n_initial = {None: 0}
-        self.n_emission = {None: {}}
+        self.n_emission = {None: {None: 0}}
         self.n_transition = {None: {None: 0}}
 
         # use internal properties to store current state for probabilities
         self.p_initial = {None: 1}
-        self.p_emission = {}
+        self.p_emission = {None: {None: 1}}
         self.p_transition = {None: {None: 1}}
 
         # store derived hyperparameters
-        self.auxiliary_transition_variables = {None: {None: 0}}  # None not actually a required element; included to avoid errors at first
+        self.auxiliary_transition_variables = {None: {None: 0}}
         self.beta_transition = {None: 1}
         self.beta_emission = {None: 1}
 
@@ -266,36 +269,37 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
 
     # number of chains
     @property
-    def C(self):
+    def c(self):
         return len(self.chains)
 
     # number of latent states
     @property
-    def K(self):
+    def k(self):
         return len(self.states)
 
     # number of emissions observed
     @property
-    def N(self):
+    def n(self):
         return len(self.emissions)
 
     # convert latent and observed sequence into more convenient numpy array
     def tabulate(self):
-        df = pd.concat((c.tabulate() for c in self.chains), axis=0, keys=range(self.C))
+        df = pd.concat((c.tabulate() for c in self.chains), axis=0, keys=range(self.c))
         return df
 
     # string format when returned as object
     def __repr__(self):
-        return '<ChainFamily size {C}>'.format(C=self.C)
+        return '<ChainFamily size {C}>'.format(C=self.c)
 
     # string format when converted to string
     def __str__(self, print_len=15):
-        return 'HDP-HMM ({C} chains, {K} states, {N} emissions, {O} observations)'.format(
-            C=self.C, K=self.K, N=self.N, O=sum(c.T for c in self.chains))
+        return 'HDP-HMM ({C} chains, {K} states, {N} emissions, {Ob} observations)'.format(
+            C=self.c, K=self.k, N=self.n, Ob=sum(c.T for c in self.chains))
 
     # create a single new state
     def generate_state(self):
-        # first, create the new label. then, append to existing properties (beta variables, counts, probabilities). finally, append new label to self.states
+        # first, create the new label. then, append to existing properties (beta variables, counts, probabilities).
+        # finally, append new label to self.states
         label = next(self._label_generator)
 
         # update counts (use zeros & assume n_update called to update to actual counts)
@@ -335,26 +339,29 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         self.p_emission[label] = dict(zip(self.emissions, temp_p_emission))
 
         # save label
-        # self.states.update(label)  # TODO: solve: this line _should_ be the same as the below, but ends up storing state '1' in self.states instead??
+        # self.states.update(label)
+        # TODO: solve: this line _should_ be the same as the below, but ends up storing state '1' in self.states instead
         self.states = self.states.union({label})
 
         #
         return label
 
     # initialise chain
-    def initialise(self, K_0=20):
+    def initialise(self, k=20):
         # create as many states as needed (do not use generate_state function yet though)
-        states = [next(self._label_generator) for _ in range(K_0)]
+        states = [next(self._label_generator) for _ in range(k)]
         self.states = set(states)
 
         # set hyperparameters
-        self.alpha, self.gamma = self.alpha_prior(), self.gamma_prior()
-        self.alpha_emission, self.gamma_emission = self.alpha_emission_prior(), self.gamma_emission_prior()
+        self.alpha = self.alpha_prior()
+        self.gamma = self.gamma_prior()
+        self.alpha_emission = self.alpha_emission_prior()
+        self.gamma_emission = self.gamma_emission_prior()
         self.kappa = self.kappa_prior()
 
         # latent states and transition betas are only parameters required to be initialised, all others can be sampled
         [c.initialise(states) for c in self.chains]
-        temp_beta = sorted(np.random.dirichlet([self.gamma / (self.K+1)] * (self.K+1)))
+        temp_beta = sorted(np.random.dirichlet([self.gamma / (self.k + 1)] * (self.k + 1)))
         self.beta_transition = dict(zip(list(self.states)+[None], temp_beta))
         self.auxiliary_transition_variables = {s1: {s2: 1 for s2 in self.states} for s1 in self.states}
 
@@ -413,15 +420,15 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         if not use_approximation:
             try:
                 logp_constant = np.log(special.gamma(scale)) - np.log(special.gamma(scale + n))
-                while p_cumulative==0 or p_cumulative < p_required and m < n:
+                while p_cumulative == 0 or p_cumulative < p_required and m < n:
                     # accumulate probability
                     m += 1
                     logp_accept = m * np.log(scale) + np.log(stirling(n, m, kind=1)) + logp_constant
                     p_cumulative += np.exp(logp_accept)
-            except (RecursionError, OverflowError) as error:
+            except (RecursionError, OverflowError):
                 # correct for failed case before
                 m -= 1
-        while p_cumulative < logp_required and m < n:
+        while p_cumulative < p_required and m < n:
             # problems with stirling recursion (large n & m), use approximation instead
             # magic number is the Euler constant, stirling approximation from Wikipedia, factorial approx from Wikipedia
             # combination reduces (after much algebra) to below (needs some additional approximations)
@@ -447,7 +454,7 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
             return m_proposed
 
         # find relative probabilities
-        if use_approximation and n>10:
+        if use_approximation and n > 10:
             logp_diff = (
                 (m_proposed-0.5)*np.log(m_proposed)
                 - (m_curr-0.5)*np.log(m_curr)
@@ -464,15 +471,27 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         return m_proposed if p_accept else m_curr
 
     @staticmethod
-    def _resample_auxiliary_transition_atom(state_pair, alpha, beta, n_initial, n_transition, auxiliary_transition_variables, resample_type='mh', use_approximation=True):
+    def _resample_auxiliary_transition_atom(
+      state_pair,
+      alpha,
+      beta,
+      n_initial,
+      n_transition,
+      auxiliary_transition_variables,
+      resample_type='mh',
+      use_approximation=True):
         # extract states
         state1, state2 = state_pair
 
         # apply resampling
-        if resample_type=='mh':
+        if resample_type == 'mh':
             return HierarchicalDirichletProcessHiddenMarkovModel._resample_auxiliary_transition_atom_mh(
-                alpha, beta[state2], n_initial[state2] + n_transition[state1][state2], auxiliary_transition_variables[state1][state2], use_approximation)
-        elif resample_type=='complete':
+                alpha,
+                beta[state2],
+                n_initial[state2] + n_transition[state1][state2],
+                auxiliary_transition_variables[state1][state2],
+                use_approximation)
+        elif resample_type == 'complete':
             return HierarchicalDirichletProcessHiddenMarkovModel._resample_auxiliary_transition_atom_complete(
                 alpha, beta[state2], n_initial[state2] + n_transition[state1][state2], use_approximation)
         else:
@@ -480,12 +499,19 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
 
     def resample_auxiliary_transition_variables(self, ncores=1, resample_type='mh', use_approximation=True):
         # standard process uses typical list comprehension
-        if ncores<2:
+        if ncores < 2:
             self.auxiliary_transition_variables = {
                 s1: {
                     s2: HierarchicalDirichletProcessHiddenMarkovModel._resample_auxiliary_transition_atom(
                         # TODO: test if we can remove the max input
-                        (s1, s2), self.alpha, self.beta_transition, self.n_initial, self.n_transition, self.auxiliary_transition_variables, resample_type, use_approximation)
+                        (s1, s2),
+                        self.alpha,
+                        self.beta_transition,
+                        self.n_initial,
+                        self.n_transition,
+                        self.auxiliary_transition_variables,
+                        resample_type,
+                        use_approximation)
                     for s2 in self.states}
                 for s1 in self.states}
 
@@ -518,10 +544,14 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         the `use_approximation` value is ignore if `use_metropolis_hasting` is `True`.
         """
         # resample auxiliary variables
-        self.resample_auxiliary_transition_variables(ncores=ncores, resample_type=auxiliary_resample_type, use_approximation=use_approximation)
+        self.resample_auxiliary_transition_variables(
+            ncores=ncores,
+            resample_type=auxiliary_resample_type,
+            use_approximation=use_approximation)
 
         # aggregate
-        aggregate_auxiliary_variables = {s2: sum(self.auxiliary_transition_variables[s1][s2] for s1 in self.states) for s2 in self.states}
+        aggregate_auxiliary_variables = {s2: sum(self.auxiliary_transition_variables[s1][s2] for s1 in self.states)
+                                         for s2 in self.states}
 
         # given by auxiliary transition variables plus gamma controlling unseen states
         temp_expected = [aggregate_auxiliary_variables[s2] for s2 in self.states] + [self.gamma]
@@ -531,7 +561,9 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
 
     def resample_beta_emission(self, eps=1e-2):
         # given by number of emissions
-        temp_expected = [sum(self.n_emission[s][e] for s in self.states) + self.gamma_emission / (self.N) for e in self.emissions]
+        temp_expected = [sum(self.n_emission[s][e] for s in self.states) +
+                         self.gamma_emission / self.n
+                         for e in self.emissions]
         # nake sure no degenerate zeros (some emissions can be unseen permanently)
         temp_expected = [max(x, eps) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
@@ -541,18 +573,20 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         # given by hierarchical beta value plus observed starts
         temp_expected = [self.n_initial[s2] + self.alpha * self.beta_transition[s2] for s2 in self.states]
         temp_expected.append(self.alpha * self.beta_transition[None])
-        temp_expected = [max(x, eps) for x in temp_expected]
+        temp_expected = [max((x, eps)) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
-        self.p_initial = {s: p for s, p in zip(list(self.states)+[None], temp_result)}
+        self.p_initial = {s: p for s, p in zip(list(self.states) + [None], temp_result)}
 
     def resample_p_transition(self, eps=1e-2):
         # given by hierarchical beta value plus observed transitions
         for s1 in self.states:
             if self.sticky:
-                temp_expected = [self.n_transition[s1][s2] + self.alpha * (1-self.kappa) * self.beta_transition[s2] + (self.alpha * self.kappa if s1==s2 else 0) for s2 in self.states]
+                temp_expected = [self.n_transition[s1][s2] + self.alpha * (1-self.kappa) * self.beta_transition[s2] +
+                                 (self.alpha * self.kappa if s1 == s2 else 0) for s2 in self.states]
                 temp_expected.append(self.alpha * (1-self.kappa) * self.beta_transition[None])
             else:
-                temp_expected = [self.n_transition[s1][s2] + self.alpha * self.beta_transition[s2] for s2 in self.states]
+                temp_expected = [self.n_transition[s1][s2] + self.alpha * self.beta_transition[s2]
+                                 for s2 in self.states]
                 temp_expected.append(self.alpha * self.beta_transition[None])
             temp_expected = [max(x, eps) for x in temp_expected]
             temp_result = np.random.dirichlet(temp_expected).tolist()
@@ -561,35 +595,37 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         # add transition probabilities from unseen states
         # note: no stickiness update because these are aggregated states
         temp_expected = [self.alpha * b for b in self.beta_transition.values()]
-        temp_expected = [max(x, eps) for x in temp_expected]
+        temp_expected = [max((x, eps)) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
         self.p_transition[None] = {s2: p for s2, p in zip(list(self.states)+[None], temp_result)}
 
     def resample_p_emission(self, eps=1e-2):
         # find parameters
         for s in self.states:
-            temp_expected = [self.n_emission[s][e] + self.alpha_emission * self.beta_emission[e] for e in self.emissions]
-            temp_expected = [max(x, eps) for x in temp_expected]
+            temp_expected = [self.n_emission[s][e] + self.alpha_emission * self.beta_emission[e]
+                             for e in self.emissions]
+            temp_expected = [max((x, eps)) for x in temp_expected]
             temp_result = np.random.dirichlet(temp_expected).tolist()
             # update stored transition probability
             self.p_emission[s] = {e: p for e, p in zip(self.emissions, temp_result)}
 
         # add emission probabilities from unseen states
         temp_expected = [self.alpha_emission * b for b in self.beta_emission.values()]
-        temp_expected = [max(x, eps) for x in temp_expected]
+        temp_expected = [max((x, eps)) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
         self.p_emission[None] = {e: p for e, p in zip(self.emissions, temp_result)}
 
-    def print_fit_parameters(self, without=None):
+    def print_fit_parameters(self):
+        # TODO: print n_initial
         # create copies to avoid editing
-        n_initial = copy.deepcopy(self.n_initial)
+        # n_initial = copy.deepcopy(self.n_initial)
         n_emission = copy.deepcopy(self.n_emission)
         n_transition = copy.deepcopy(self.n_transition)
 
         # make nested lists for clean printing
-        emissions = [[str(s)] + [n_emission[s][e] for e in self.emissions] for s in self.states]
+        emissions = [[str(s)] + [str(n_emission[s][e]) for e in self.emissions] for s in self.states]
         emissions.insert(0, ['S_i \ E_i'] + list(map(str, self.emissions)))
-        transitions = [[str(s1)] + [n_transition[s1][s2] for s2 in self.states] for s1 in self.states]
+        transitions = [[str(s1)] + [str(n_transition[s1][s2]) for s2 in self.states] for s1 in self.states]
         transitions.insert(0, ['S_i \ S_j'] + list(map(lambda x: str(x), self.states)))
 
         # format tables
@@ -613,14 +649,15 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         return None
 
     def print_probabilities(self):
+        # TODO: print p_initial
         # create copies to avoid editing
-        p_initial = copy.deepcopy(self.p_initial)
+        # p_initial = copy.deepcopy(self.p_initial)
         p_emission = copy.deepcopy(self.p_emission)
         p_transition = copy.deepcopy(self.p_transition)
 
         # convert to nested lists for clean printing
-        p_emission = [[str(s)] + [round(p_emission[s][e], 3) for e in self.emissions] for s in self.states]
-        p_transition = [[str(s1)] + [round(p_transition[s1][s2], 3) for s2 in self.states] for s1 in self.states]
+        p_emission = [[str(s)] + [str(round(p_emission[s][e], 3)) for e in self.emissions] for s in self.states]
+        p_transition = [[str(s1)] + [str(round(p_transition[s1][s2], 3)) for s2 in self.states] for s1 in self.states]
         p_emission.insert(0, ['S_i \ E_j'] + [str(e) for e in self.emissions])
         p_transition.insert(0, ['S_i \ E_j'] + [str(s) for s in self.states])
 
@@ -652,7 +689,7 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         p_initial, p_emission, p_transition = self.p_initial, self.p_emission, self.p_transition
 
         # non-parallel execution:
-        if ncores<2:
+        if ncores < 2:
             [chain.resample_latent_sequence(
                 list(self.states)+[None], p_initial, p_emission, p_transition
             ) for chain in self.chains]
@@ -664,7 +701,7 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
 
             # create temporary function for mapping
             resample_partial = partial(
-                Chain._resample_latent_sequence_beam,
+                Chain.resample_latent_sequence_static,
                 states=list(self.states)+[None],
                 p_initial=copy.deepcopy(p_initial),
                 p_emission=copy.deepcopy(p_emission),
@@ -676,13 +713,12 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
                     resample_partial,
                     ((chain.emission_sequence, chain.auxiliary_beam_variables) for chain in self.chains))
 
-            # if parallel, did not operate on actual Chain objects, and we should assign returned latent sequences back to actual
-            for i in range(self.C):
+            # assign returned latent sequences back to Chains (not done is static version)
+            for i in range(self.c):
                 self.chains[i].latent_sequence = results[i]
 
         # update chains using results
         # TODO: parameter check if we should be using alpha or gamma as parameter
-        states_initial = copy.deepcopy(self.states)
         state_generator = dirichlet_process_generator(self.gamma, output_generator=lambda: self.generate_state())
         for chain in self.chains:
             chain.latent_sequence = [s if s is not None else next(state_generator) for s in chain.latent_sequence]
@@ -694,14 +730,24 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         # use Metropolis Hastings resampling
 
         # get current and proposed hyperparameters
-        hyperparameters_current = copy.deepcopy([self.alpha, self.gamma, self.alpha_emission, self.gamma_emission, self.kappa])
+        hyperparameters_current = copy.deepcopy([
+            self.alpha,
+            self.gamma,
+            self.alpha_emission,
+            self.gamma_emission,
+            self.kappa])
         hyperparameters_next = copy.deepcopy(hyperparameters_current)
-        hyperparameters_proposed = [self.alpha_prior(), self.gamma_prior(), self.alpha_emission_prior(), self.gamma_emission_prior(), self.kappa_prior()]
+        hyperparameters_proposed = [
+            self.alpha_prior(),
+            self.gamma_prior(),
+            self.alpha_emission_prior(),
+            self.gamma_emission_prior(),
+            self.kappa_prior()]
 
         # iterate and accept each in order
         for param_index in range(len(hyperparameters_current)):
             # don't update kappa if not a sticky chain
-            if not self.sticky and param_index==4:
+            if not self.sticky and param_index == 4:
                 continue
 
             # get current negative log likelihood
@@ -725,11 +771,12 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
                 hyperparameters_current = copy.deepcopy(hyperparameters_next)
             else:
                 hyperparameters_next = copy.deepcopy(hyperparameters_current)
-                self.alpha, self.gamma, self.alpha_emission, self.gamma_emission, self.kappa = tuple(hyperparameters_next)
+                self.alpha, self.gamma, self.alpha_emission, self.gamma_emission, self.kappa = \
+                    tuple(hyperparameters_next)
 
         return None
 
-    def MCMC(self, n=1000, burn_in=500, progress_bar=True, save_every=10, ncores=-1):
+    def mcmc(self, n=1000, burn_in=500, save_every=10, ncores=-1):
         # store parameters
         state_count_hist = list()
         sequence_prob_hist = list()
@@ -758,7 +805,7 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
             self.n_update()
 
             # check states and inform if number changes
-            if len(states_prev) != self.K or self.states - states_prev != set():
+            if len(states_prev) != self.k or self.states - states_prev != set():
                 states_removed = states_prev - self.states
                 states_added = self.states - states_prev
                 tqdm.write(
@@ -766,28 +813,34 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
                         # 'increased' if len(states_prev) < self.K else 'decreased',
                         i=i,
                         k1=len(states_prev),
-                        k2=self.K,
+                        k2=self.k,
                         s1=states_removed,
                         s2=states_added))
                 states_prev = copy.copy(self.states)
 
             # store results
-            if i>=burn_in and i%save_every == 0:
+            if i >= burn_in and i % save_every == 0:
                 # get parameters as nested lists (better import to R)
                 p_initial = copy.deepcopy(self.p_initial)
                 p_emission = copy.deepcopy(self.p_emission)
                 p_transition = copy.deepcopy(self.p_transition)
 
                 # save new data
-                state_count_hist.append(self.K)
+                state_count_hist.append(self.k)
                 sequence_prob_hist.append(self.neglogp_sequences())
-                hyperparameter_hist.append((self.alpha, self.gamma, self.alpha_emission, self.gamma_emission, self.kappa))
+                hyperparameter_hist.append((self.alpha,
+                                            self.gamma,
+                                            self.alpha_emission,
+                                            self.gamma_emission,
+                                            self.kappa))
                 beta_emission_hist.append(self.beta_emission)
                 beta_transition_hist.append(self.beta_transition)
                 parameter_hist.append((p_initial, p_emission, p_transition))
 
         # return saved observations
-        return state_count_hist, sequence_prob_hist, hyperparameter_hist, beta_emission_hist, beta_transition_hist, parameter_hist
-
-
-## EOF
+        return (state_count_hist,
+                sequence_prob_hist,
+                hyperparameter_hist,
+                beta_emission_hist,
+                beta_transition_hist,
+                parameter_hist)
