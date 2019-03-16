@@ -26,14 +26,14 @@ The standard way to estimate the parameters, via MCMC, is outlined below.
   
 
 ```
-import HDPHMM
+import bayesian_hmm as npbhmm
 
 # create emission sequences
 sequences = list(range(6)) + list(range(5,-1))
 sequences = [sequences * 10] * 10
 
 # initialise object with overestimate of true number of latent states
-hdphmm = HDPHMM(sequences)
+hdphmm = npbhmm.HDPHMM(sequences)
 hdphmm.initialise(k=20)
 
 # estimate parameters

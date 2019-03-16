@@ -1,9 +1,5 @@
-"""
-Hierarchical Dirichlet Process Hidden Markov Model
-2019-01-02
-"""
+#!/usr/bin/env python3
 
-# standard imports
 import numpy as np
 import pandas as pd
 import random
