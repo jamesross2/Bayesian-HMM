@@ -47,7 +47,7 @@ def dirichlet_process_generator(alpha=1, output_generator=None):
         yield val
 
 
-# Chain stores a single markov emisison sequence plus associated latent variables
+# Chain stores a single markov emission sequence plus associated latent variables
 class Chain(object):
     def __init__(self, sequence):
 
