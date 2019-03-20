@@ -7,8 +7,11 @@ verify_ssl = true
 
 [packages]
 numpy = "*"
+scipy = "*"
+tqdm = "*"
+terminaltables = "*"
+sympy = "*"
 pandas = "*"
-nose = "*"
 
 [requires]
 python_version = "3.6"
