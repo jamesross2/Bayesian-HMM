@@ -11,6 +11,7 @@ from functools import reduce, partial
 import multiprocessing
 from sympy.functions.combinatorial.numbers import stirling  # stirling numbers
 import itertools  # for infinite generators
+import string
 
 
 # used to give human-friendly labels to states as they are created
@@ -140,34 +141,34 @@ class Chain(object):
     def resample_latent_sequence_static(sequences, states, p_initial, p_emission, p_transition):
         # extract size information
         emission_sequence, auxiliary_vars = sequences
-        t = len(emission_sequence)
+        seqlen = len(emission_sequence)
 
         # edge case: zero-length sequence
-        if t == 0:
+        if seqlen == 0:
             return []
 
         # initialise historical P(s_t | u_{1:t}, y_{1:t}) and latent sequence
-        p_history = [None] * t
-        latent_sequence = [None]*t
+        p_history = [None] * seqlen
+        latent_sequence = [None]*seqlen
 
         # compute probability of state t (currently the starting state t==0)
         p_history[0] = {s: p_initial[s] * p_emission[s][emission_sequence[0]] if p_initial[s] > auxiliary_vars[0] else 0
                         for s in states}
         # for remaining states, probabilities are function of emission and transition
-        for t in range(1, t):
+        for t in range(1, seqlen):
             p_temp = {s2: sum(p_history[t-1][s1] for s1 in states if p_transition[s1][s2] > auxiliary_vars[t]) *
                       p_emission[s2][emission_sequence[t]] for s2 in states}
             p_temp_total = sum(p_temp.values())
             p_history[t] = {s: p_temp[s] / p_temp_total for s in states}
 
         # choose ending state
-        latent_sequence[t-1] = random.choices(
-            tuple(p_history[t-1].keys()),
-            weights=tuple(p_history[t-1].values()),
+        latent_sequence[seqlen-1] = random.choices(
+            tuple(p_history[seqlen-1].keys()),
+            weights=tuple(p_history[seqlen-1].values()),
             k=1)[0]
 
         # work backwards to compute new latent sequence
-        for t in range(t-2, -1, -1):
+        for t in range(seqlen-2, -1, -1):
             p_temp = {s1: p_history[t][s1] * p_transition[s1][latent_sequence[t+1]]
                       if p_transition[s1][latent_sequence[t+1]] > auxiliary_vars[t+1] else 0
                       for s1 in states}
@@ -245,7 +246,7 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         self.states = set()
 
         # generate non-repeating character labels for latent states
-        self._label_generator = label_generator('abcdefghijklmnopqrstuvwxyz')
+        self._label_generator = label_generator(string.ascii_lowercase)
 
         # keep flag to track initialisation
         self._initialised = False
@@ -371,6 +372,8 @@ class HierarchicalDirichletProcessHiddenMarkovModel(object):
         self.resample_beta_emission()
         self.resample_p_emission()
         [c.resample_auxiliary_beam_variables(self.p_initial, self.p_transition) for c in self.chains]
+        
+        self._initialised = True
 
     # get global fit parameters
     def n_update(self):
