@@ -6,7 +6,8 @@ python:
 install:
   - 'pip install pipenv'
   - 'pipenv install'
+  - 'python3 setup.py install'
 
 # run tests
 script:
-  - pytest
+  - python -m pytest -v
