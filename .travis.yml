@@ -1,0 +1,13 @@
+language: python
+python:
+  - "3.6"
+
+# install dependencies
+install:
+  - 'pip install pipenv'
+  - 'pipenv install'
+  - 'python3 setup.py install'
+
+# run tests
+script:
+  - python -m pytest -v
