@@ -2,9 +2,23 @@
 
 This code implements a non-parametric Bayesian Hidden Markov model,
 sometimes referred to as a Hierarchical Dirichlet Process Hidden Markov
-Model, or an Infinite Hidden Markov Model. 
-Inference is performed via Markov chain Monte Carlo estimation.
+Model, or an Infinite Hidden Markov Model. This package has capability
+for a standard non-parametric Bayesian HMM, as well as a sticky HDPHMM 
+(see references). Inference is performed via Markov chain Monte Carlo estimation,
+including efficient beam sampling for the latent sequences resampling steps.
 Currently, only categorical emission distributions are supported.
+Resampling is also multithreaded for better performance.
+
+
+## Installation
+
+The current version is development only, and installation is only recommended for
+people who are aware of the risks. It can be installed using the following code:
+
+```
+sudo apt-get install git
+pip install git+https://github.com/jamesross2/Bayesian-HMM
+```
 
 
 ## Hidden Markov Models
@@ -26,28 +40,28 @@ The standard way to estimate the parameters, via MCMC, is outlined below.
   
 
 ```
-import bayesian_hmm as npbhmm
+import bayesian_hmm
 
 # create emission sequences
 sequences = list(range(6)) + list(range(5,-1))
 sequences = [sequences * 10] * 10
 
 # initialise object with overestimate of true number of latent states
-hdphmm = npbhmm.HDPHMM(sequences)
-hdphmm.initialise(k=20)
+hmm = bayesian_hmm.HDPHMM(sequences)
+hmm.initialise(k=20)
 
 # estimate parameters
-results = hdphmm.mcmc(n=100, burn_in=20)
+results = hmm.mcmc(n=100, burn_in=20)
 
 # print final probability estimates
-hdphmm.print_probabilities()
+hmm.print_probabilities()
 ```
 
 The package can handle slightly more advanced usage. 
 It has support for the following:
 
   * Categorical emission distributions
-  * Multiple emission sequences, estimated in parallel
+  * Multiple emission sequences of different lengths, estimated in parallel
   * Starting probabilities, which share a dirichlet prior with the transition probabilities
 
 For examples of each, consult the example scripts.
@@ -69,9 +83,8 @@ variable for the sampled estimate.
 
 We have the following set as a priority to improve in the future:
 
-* Convert the module into a package
-* Include testing in the repository
-* Include standard HMM functions, such as Baum Welch and Viterbi algorithm
+* Check all resampling processes
+* Expand package to include standard non-Bayesian HMM functions, such as Baum Welch and Viterbi algorithm
 
 
 ## References
