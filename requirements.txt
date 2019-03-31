@@ -1,0 +1,7 @@
+scipy
+numpy
+pandas
+terminaltables
+tqdm
+sympy
+

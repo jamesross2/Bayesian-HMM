@@ -1,3 +1,6 @@
-from .npbhmm import Chain, HierarchicalDirichletProcessHiddenMarkovModel
+from .hdphmm import Chain, HDPHMM
+import warnings
 
-print('bayesian_hmm is in beta testing, may change at any time, and has no guarantee of accuracy')
+warnings.warn(
+    "bayesian_hmm is in beta testing, may change at any time, and has no guarantee of accuracy"
+)
