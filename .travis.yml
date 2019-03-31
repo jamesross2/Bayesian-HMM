@@ -4,9 +4,10 @@ python:
 
 # install dependencies
 install:
-  - 'python3 setup.py install'
+  - python setup.py install
+  - pip install black
 
 # run tests
 script:
-  - python -m pytest -v
-  - black --check ./
+  - pytest -v
+  - black --check ./ -v
