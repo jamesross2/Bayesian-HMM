@@ -11,3 +11,4 @@ install:
 # run tests
 script:
   - python -m pytest -v
+  - black --check ./
