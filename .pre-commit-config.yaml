@@ -1,0 +1,7 @@
+fail_fast: false
+repos:
+-   repo: https://github.com/jamesross2/Bayesian-HMM
+    rev: master
+    hooks:
+    - id: black
+      language_version: python3.6
