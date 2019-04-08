@@ -14,11 +14,10 @@ and multithreading when possible for parameter resampling.
 ## Installation
 
 The current version is development only, and installation is only recommended for
-people who are aware of the risks. It can be installed using the following code:
+people who are aware of the risks. It can be installed through PyPI:
 
-```
-sudo apt-get install git
-pip install git+https://github.com/jamesross2/Bayesian-HMM
+```sh
+pip install bayesian-hmm
 ```
 
 
@@ -43,7 +42,7 @@ The below example constructs some artificial observation series, and uses a brie
 model parameters.
 We use a moderately sized data to showcase the speed of the package: 50 sequences of length 200, with 500 MCMC steps.   
 
-```
+```python
 import bayesian_hmm
 
 # create emission sequences
@@ -51,9 +50,8 @@ base_sequence = list(range(5)) + list(range(5, 0, -1))
 sequences = [base_sequence * 20 for _ in range(50)]
 
 # initialise object with overestimate of true number of latent states
-hmm = bayesian_hmm.HDPHMM(sequences)
+hmm = bayesian_hmm.HDPHMM(sequences, sticky=False)
 hmm.initialise(k=20)
-
 
 # estimate parameters, making use of multithreading functionality
 results = hmm.mcmc(n=500, burn_in=100)
