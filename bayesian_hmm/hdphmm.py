@@ -983,7 +983,6 @@ class HDPHMM(object):
                     hyperparameters_next
                 )
 
-
     def mcmc(self, n=1000, burn_in=500, save_every=10, ncores=1, verbose=True):
         """
         Use Markov chain Monte Carlo to estimate the starting, transition, and emission
