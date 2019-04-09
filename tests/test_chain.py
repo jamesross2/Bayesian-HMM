@@ -35,7 +35,8 @@ def test_initialise_chain():
 
 def test_chain_resample_transition():
     """
-    Check that resampled latent sequence conforms to deterministic transition latent structure
+    Check that resampled latent sequence conforms to deterministic transition latent
+    structure
     """
     # specify starting emission sequence
     len_init = 10
@@ -50,7 +51,7 @@ def test_chain_resample_transition():
     for i in range(len(states)):
         p_transition[states[i]][states[(i + 1) % len(states)]] = 1
 
-    # degenerate starting and transition probabilities force the following latent sequence
+    # degenerate starting and transition probabilities force the given latent sequence
     latent_sequence_resampled = [states[-1]] + [
         states[i % len(states)] for i in range(len(emissions) - 1)
     ]
@@ -61,7 +62,13 @@ def test_chain_resample_transition():
     assert all(s == states[0] for s in chain.latent_sequence)
 
     # resample latent series
-    chain.resample_latent_sequence(states, p_initial, p_emission, p_transition)
+    chain.latent_sequence = chain.resample_latent_sequence(
+        (chain.emission_sequence, chain.latent_sequence),
+        states,
+        p_initial,
+        p_emission,
+        p_transition,
+    )
 
     # check that engineered latent structure holds
     assert all(
@@ -87,7 +94,7 @@ def test_chain_resample_emission():
     }
     p_transition = {s1: {s2: 1 / len(states) for s2 in states} for s1 in states}
 
-    # degenerate starting and transition probabilities force the following latent sequence
+    # degenerate starting and transition probabilities force the given latent sequence
     emission_sequence = emissions * len_init
     latent_sequence_resampled = [
         states[i % len_init] for i in range(len(emission_sequence))
@@ -99,7 +106,13 @@ def test_chain_resample_emission():
     assert all(s in states for s in chain.latent_sequence)
 
     # resample latent series
-    chain.resample_latent_sequence(states, p_initial, p_emission, p_transition)
+    chain.latent_sequence = chain.resample_latent_sequence(
+        (chain.emission_sequence, chain.latent_sequence),
+        states,
+        p_initial,
+        p_emission,
+        p_transition,
+    )
 
     # check that engineered latent structure holds
     assert all(
