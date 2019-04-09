@@ -5,9 +5,9 @@ python:
 # install dependencies
 install:
   - python setup.py install
-  - pip install black
+  - pip install black pytest-cov
 
 # run tests
 script:
-  - pytest -v
+  - pytest --cov=bayesian_hmm tests/
   - black --check ./ -v
