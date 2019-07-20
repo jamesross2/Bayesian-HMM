@@ -45,7 +45,7 @@ class Chain(object):
     @initialised_flag.setter
     def initialised_flag(self, value):
         if value is True:
-            raise AssertionError(
+            raise RuntimeError(
                 "Chain must be initialised through initialise_chain method"
             )
         elif value is False:
@@ -54,11 +54,11 @@ class Chain(object):
             raise ValueError("initialised flag must be Boolean")
 
     def __repr__(self):
-        return "<Chain size {0}>".format(len(self.emission_sequence))
+        return "<bayesian_hmm.Chain, size {0}>".format(self.T)
 
     def __str__(self, print_len=15):
         print_len = min(print_len - 1, self.T - 1)
-        return "Chain size={T}, seq={s}".format(
+        return "bayesian_hmm.Chain, size={T}, seq={s}".format(
             T=self.T,
             s=[
                 "{s}:{e}".format(s=s, e=e)
@@ -70,7 +70,7 @@ class Chain(object):
     def tabulate(self):
         """
         Convert the latent and emission sequences into a single numpy array.
-        :return: numpy array with dimension (l, 2), where l is the length of the Chain
+        :return: numpy array with shape (l, 2), where l is the length of the Chain
         """
         return np.column_stack(
             (copy.copy(self.latent_sequence), copy.copy(self.emission_sequence))
@@ -80,7 +80,7 @@ class Chain(object):
     def initialise(self, states):
         """
         Initialise the chain by sampling latent states.
-        Typically called directly from a HDPHMM object.
+        Typically called directly from an HDPHMM object.
         :param states: set of states to sample from
         :return: None
         """
@@ -103,7 +103,7 @@ class Chain(object):
         if self.T == 0:
             return 0
 
-        # get probability state & emission, at start and remaining time steps
+        # get probability of transition & of emission, at start and remaining time steps
         # np.prod([])==1, so this is safe
         p_initial = np.log(p_initial[self.latent_sequence[0]]) + np.log(
             p_emission[self.latent_sequence[0]][self.emission_sequence[0]]
