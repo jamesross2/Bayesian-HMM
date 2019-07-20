@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="bayesian_hmm",
-    version="0.0.1",
+    version="0.0.2",
     license="MIT",
     packages=setuptools.find_packages(exclude=["tests"]),
     author="James Ross",
@@ -16,7 +16,7 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    install_requires=["scipy", "numpy", "pandas", "terminaltables", "tqdm", "sympy"],
+    install_requires=["scipy", "numpy", "terminaltables", "tqdm", "sympy"],
     test_suite="py.test",
     tests_require=["pytest", "black"],
 )

@@ -38,3 +38,55 @@ def test_initialise_hmm():
     assert hmm.c == 49
     assert hmm.k == 20
     assert hmm.n == 49
+
+
+def test_sticky_initialisation():
+    emission_sequences = [[1, 2, 3] * 3] * 3
+    hmm_sticky = bayesian_hmm.HDPHMM(emission_sequences, sticky=True)
+    hmm_slippery = bayesian_hmm.HDPHMM(emission_sequences, sticky=False)
+    hmm_sticky.initialise(20)
+    hmm_slippery.initialise(20)
+
+    # check chain initialises correctly in both cases
+    assert 0 <= hmm_sticky.parameters["kappa"] <= 1
+    assert hmm_sticky.priors["kappa"] != (lambda: 0)
+    assert hmm_slippery.parameters["kappa"] == 0
+    assert all(hmm_slippery.priors["kappa"]() == 0 for _ in range(100))
+
+
+def test_manual_priors():
+    emission_sequences = [[1, 2, 3] * 3] * 3
+    priors_default = {
+        "alpha": lambda: np.random.gamma(2, 2),
+        "gamma": lambda: np.random.gamma(3, 3),
+        "alpha_emission": lambda: np.random.gamma(2, 2),
+        "gamma_emission": lambda: np.random.gamma(3, 3),
+        "kappa": lambda: np.random.beta(1, 1),
+    }
+    hmms = {
+        "default": bayesian_hmm.HDPHMM(emission_sequences),
+        "single": bayesian_hmm.HDPHMM(emission_sequences, priors={"alpha": lambda: -1}),
+        "all": bayesian_hmm.HDPHMM(
+            emission_sequences,
+            priors={param: lambda: -1 for param in priors_default.keys()},
+        ),
+    }
+
+    # check that priors work in all cases
+    assert all(param > 0 for param in hmms["default"].parameters.values())
+    assert all(param < 0 for param in hmms["all"].parameters.values())
+    assert hmms["single"].parameters["alpha"] < 0
+    assert all(
+        hmms["single"].parameters[param] > 0
+        for param in priors_default.keys()
+        if param != "alpha"
+    )
+
+    fail = False
+    try:
+        _ = bayesian_hmm.HDPHMM(
+            emission_sequences, priors={"kappa": lambda: 2}, sticky=False
+        )
+    except ValueError:
+        fail = True
+    assert fail

@@ -22,23 +22,22 @@ Chain.
 """
 
 import numpy as np
-import pandas as pd
 import random
-from scipy import special
 import copy
-from terminaltables import DoubleTable
-from tqdm import tqdm
-from functools import reduce, partial
+import terminaltables
+import tqdm
+import functools
 import multiprocessing
-from sympy.functions.combinatorial.numbers import stirling
 import itertools
-from string import ascii_lowercase
+import string
+from scipy import special
+from sympy.functions.combinatorial.numbers import stirling
 from .chain import Chain
 from warnings import catch_warnings
 
 
 # used to give human-friendly labels to states as they are created
-def label_generator(labels):
+def label_generator(labels=string.ascii_lowercase):
     """
     :param labels: set of labels to choose from. Should not be numeric.
     :return: a generator which  yields unique labels of the form
@@ -66,13 +65,18 @@ def dirichlet_process_generator(alpha=1, output_generator=None):
     """
     if output_generator is None:
         output_generator = itertools.count(start=0, step=1)
-    sequence = []
+    count = 0
+    weights = {}
     while True:
-        if random.uniform(0, 1) > (len(sequence) / (len(sequence) + alpha)):
-            val = output_generator()
+        if random.uniform(0, 1) > (count / (count + alpha)):
+            val = next(output_generator)
+            weights[val] = 1
         else:
-            val = random.choice(sequence)
-        sequence.append(val)
+            val = np.random.choice(
+                list(weights.keys()), 1, p=list(x / count for x in weights.values())
+            )[0]
+            weights[val] += 1
+        count += 1
         yield val
 
 
@@ -82,17 +86,7 @@ class HDPHMM(object):
     sticky-HDPHMM, since we allow a biased self-transition probability.
     """
 
-    def __init__(
-        self,
-        emission_sequences,
-        emissions=None,
-        sticky=True,
-        alpha_prior=lambda: np.random.gamma(2, 2),
-        gamma_prior=lambda: np.random.gamma(3, 3),
-        alpha_emission_prior=lambda: np.random.gamma(2, 2),
-        gamma_emission_prior=lambda: np.random.gamma(3, 3),
-        kappa_prior=lambda: np.random.beta(1, 1),
-    ):
+    def __init__(self, emission_sequences, emissions=None, sticky=True, priors=None):
         """
         Create a Hierarchical Dirichlet Process Hidden Markov Model object, which can
         (optionally) be sticky. The emission sequences must be provided, although all
@@ -112,31 +106,29 @@ class HDPHMM(object):
         transition. It is recommended to set this depending on the knowledge of the
         problem at hand.
         
-        :param alpha_prior: function. Prior distribution of the alpha parameter. Alpha
-        parameter is the value used in the hierarchical Dirichlet prior for transitions
-        and starting probabilities. Higher values of alpha keep rows of the transition
-        matrix more similar to the beta parameters.
-        
-        :param gamma_prior: function. Prior distribution of the gamma parameter. Gamma
-        controls the strength of the uninformative prior in the starting and transition
-        distributions. Hence, it impacts the likelihood of resampling unseen states when
-        estimating beta coefficients. That is, higher values of gamma mean the HMM is
-        more likely to explore new states when resampling.
-        
-        :param alpha_emission_prior: function. Prior distribution of the alpha parameter
-        for the emission prior distribution. Alpha controls how tightly the conditional
-        emission distributions follow their hierarchical prior. Hence, higher values of
-        alpha_emission mean more strength in the hierarchical prior.
-        
-        :param gamma_emission_prior: function. Prior distribution of the gamma parameter
-        for the emission prior distribution. Gamma controls the strength of
-        the uninformative prior in the emission distribution. Hence, higher values of
-        gamma mean more strength of belief in the prior.
-        
-        :param kappa_prior: function. Prior distribution of the kappa parameter for the
-        self-transition probability. Ignored if `sticky==False`. Kappa prior should have
-        support in (0, 1) only. Higher values of kappa mean the chain is more likely to
-        explore states with high self-transition probabilty.
+        :param priors: dict, containing priors for the model hyperparameters. Priors
+        should be functions with zero arguments. The following priors are accepted:
+          + alpha: prior distribution of the alpha parameter. Alpha
+            parameter is the value used in the hierarchical Dirichlet prior for
+            transitions and starting probabilities. Higher values of alpha keep rows of
+            the transition matrix more similar to the beta parameters.
+          + gamma: prior distribution of the gamma parameter. Gamma controls the
+            strength of the uninformative prior in the starting and transition
+            distributions. Hence, it impacts the likelihood of resampling unseen states
+            when estimating beta coefficients. That is, higher values of gamma mean the
+            HMM is more likely to explore new states when resampling.
+          + alpha_emission: prior distribution of the alpha parameter for the
+            emission prior distribution. Alpha controls how tightly the conditional
+            emission distributions follow their hierarchical prior. Hence, higher values
+            of alpha_emission mean more strength in the hierarchical prior.
+          + gamma_emission: prior distribution of the gamma parameter for the
+            emission prior distribution. Gamma controls the strength of the
+            uninformative prior in the emission distribution. Hence, higher values of
+            gamma mean more strength of belief in the prior.
+          + kappa: prior distribution of the kappa parameter for the
+            self-transition probability. Ignored if `sticky==False`. Kappa prior should
+            have support in (0, 1) only. Higher values of kappa mean the chain is more
+            likely to explore states with high self-transition probabilty.
         """
         # store chains
         self.chains = [Chain(sequence) for sequence in emission_sequences]
@@ -147,23 +139,26 @@ class HDPHMM(object):
         self.sticky = sticky
 
         # store hyperparameter priors
-        self.alpha_prior, self.gamma_prior = alpha_prior, gamma_prior
-        self.alpha_emission_prior, self.gamma_emission_prior = (
-            alpha_emission_prior,
-            gamma_emission_prior,
-        )
-        self.kappa_prior = kappa_prior
+        self.priors = {
+            "alpha": lambda: np.random.gamma(2, 2),
+            "gamma": lambda: np.random.gamma(3, 3),
+            "alpha_emission": lambda: np.random.gamma(2, 2),
+            "gamma_emission": lambda: np.random.gamma(3, 3),
+            "kappa": lambda: np.random.beta(1, 1),
+        }
+        if priors is not None:
+            self.priors.update(priors)
+        if len(self.priors) > 5:
+            raise ValueError("Unknown hyperparameter priors present")
 
         # adjust kappa prior for non-sticky chains
         if not self.sticky:
-            self.kappa_prior = lambda: 0
+            self.priors["kappa"] = lambda: 0
+            if priors is not None and "kappa" in priors:
+                raise ValueError("`sticky` is False, but non-zero kappa prior given")
 
         # store initial hyperparameter values
-        self.alpha = 1
-        self.gamma = 1
-        self.alpha_emission = 1
-        self.gamma_emission = 1
-        self.kappa = 0.2 if self.sticky else 0.0
+        self.parameters = {param: prior() for param, prior in self.priors.items()}
 
         # use internal properties to store fit parameters
         self.n_initial = {None: 0}
@@ -182,7 +177,7 @@ class HDPHMM(object):
 
         # states & emissions
         if emissions is None:
-            emissions = reduce(
+            emissions = functools.reduce(
                 set.union, (set(c.emission_sequence) for c in self.chains), set()
             )
         elif type(emissions) is not set:
@@ -191,7 +186,7 @@ class HDPHMM(object):
         self.states = set()
 
         # generate non-repeating character labels for latent states
-        self._label_generator = label_generator(ascii_lowercase)
+        self._label_generator = label_generator(string.ascii_lowercase)
 
         # keep flag to track initialisation
         self._initialised = False
@@ -207,7 +202,7 @@ class HDPHMM(object):
     @initialised.setter
     def initialised(self, value):
         if value:
-            raise AssertionError("must be initialised through initialise method")
+            raise AssertionError("HDPHMM must be initialised through initialise method")
         elif not value:
             self._initialised = False
         else:
@@ -247,17 +242,29 @@ class HDPHMM(object):
         all times.
         :return: numpy array with dimension (l, 3), where l is the length of the Chain
         """
-        df = pd.concat((c.tabulate() for c in self.chains), axis=0, keys=range(self.c))
-        return df
+        hmm_array = np.concatenate(
+            tuple(
+                np.concatenate(
+                    (np.array([[n] * self.chains[n].T]).T, self.chains[n].tabulate()),
+                    axis=1,
+                )
+                for n in range(self.c)
+            ),
+            axis=0,
+        )
+        return hmm_array
 
     def __repr__(self):
-        return "<ChainFamily size {C}>".format(C=self.c)
+        return "<bayesian_hmm.HDPHMM, size {C}>".format(C=self.c)
 
     def __str__(self, print_len=15):
-        fs = "HDP-HMM ({C} chains, {K} states, {N} emissions, {Ob} observations)"
+        fs = (
+            "bayesian_hmm.HDPHMM,"
+            + " ({C} chains, {K} states, {N} emissions, {Ob} observations)"
+        )
         return fs.format(C=self.c, K=self.k, N=self.n, Ob=sum(c.T for c in self.chains))
 
-    def generate_state(self):
+    def state_generator(self):
         """
         Create a new state for the HDPHMM, and update all parameters accordingly.
         This involves updating
@@ -267,62 +274,66 @@ class HDPHMM(object):
           + The states captured by the HDPHMM
         :return: str, label of the new state
         """
-        label = next(self._label_generator)
+        while True:
+            label = next(self._label_generator)
 
-        # update counts (use zeros & assume _n_update called to update to actual counts)
-        # state irrelevant for constant count (all zeros)
-        self.n_initial[label] = 0
-        self.n_transition[label] = {s: 0 for s in self.states.union({label})}
-        [self.n_transition[s].update({label: 0}) for s in self.states]
-        self.n_emission[label] = {e: 0 for e in self.emissions}
+            # update counts with zeros (assume _n_update called later)
+            # state irrelevant for constant count (all zeros)
+            self.n_initial[label] = 0
+            self.n_transition[label] = {s: 0 for s in self.states.union({label})}
+            [self.n_transition[s].update({label: 0}) for s in self.states]
+            self.n_emission[label] = {e: 0 for e in self.emissions}
 
-        # update auxiliary transition variables
-        self.auxiliary_transition_variables[label] = {
-            s2: 1 for s2 in list(self.states) + [label]
-        }
-        for s1 in self.states:
-            self.auxiliary_transition_variables[s1][label] = 1
+            # update auxiliary transition variables
+            self.auxiliary_transition_variables[label] = {
+                s2: 1 for s2 in list(self.states) + [label]
+            }
+            for s1 in self.states:
+                self.auxiliary_transition_variables[s1][label] = 1
 
-        # update beta_transition value and split out from current pseudo state
-        temp_beta = np.random.beta(1, self.gamma)
-        self.beta_transition[label] = temp_beta * self.beta_transition[None]
-        self.beta_transition[None] = (1 - temp_beta) * self.beta_transition[None]
+            # update beta_transition value and split out from current pseudo state
+            temp_beta = np.random.beta(1, self.parameters["gamma"])
+            self.beta_transition[label] = temp_beta * self.beta_transition[None]
+            self.beta_transition[None] = (1 - temp_beta) * self.beta_transition[None]
 
-        # update starting probability
-        temp_p_initial = np.random.beta(1, self.gamma)
-        self.p_initial[label] = temp_p_initial * self.p_initial[None]
-        self.p_initial[None] = (1 - temp_p_initial) * self.p_initial[None]
+            # update starting probability
+            temp_p_initial = np.random.beta(1, self.parameters["gamma"])
+            self.p_initial[label] = temp_p_initial * self.p_initial[None]
+            self.p_initial[None] = (1 - temp_p_initial) * self.p_initial[None]
 
-        # update transition from new state
-        temp_p_transition = np.random.dirichlet(
-            [self.beta_transition[s] for s in list(self.states) + [label, None]]
-        )
-        self.p_transition[label] = dict(
-            zip(list(self.states) + [label, None], temp_p_transition)
-        )
-
-        # update transitions into new state
-        for state in self.states.union({None}):
-            # (note that label not included in self.states)
-            temp_p_transition = np.random.beta(1, self.gamma)
-            self.p_transition[state][label] = (
-                self.p_transition[state][None] * temp_p_transition
+            # update transition from new state
+            temp_p_transition = np.random.dirichlet(
+                [self.beta_transition[s] for s in list(self.states) + [label, None]]
             )
-            self.p_transition[state][None] = self.p_transition[state][None] * (
-                1 - temp_p_transition
+            self.p_transition[label] = dict(
+                zip(list(self.states) + [label, None], temp_p_transition)
             )
 
-        # update emission probabilities
-        temp_p_emission = np.random.dirichlet(
-            [self.alpha_emission * self.beta_emission[e] for e in self.emissions]
-        )
-        self.p_emission[label] = dict(zip(self.emissions, temp_p_emission))
+            # update transitions into new state
+            for state in self.states.union({None}):
+                # (note that label not included in self.states)
+                temp_p_transition = np.random.beta(1, self.parameters["gamma"])
+                self.p_transition[state][label] = (
+                    self.p_transition[state][None] * temp_p_transition
+                )
+                self.p_transition[state][None] = self.p_transition[state][None] * (
+                    1 - temp_p_transition
+                )
 
-        # save label
-        self.states = self.states.union({label})
+            # update emission probabilities
+            temp_p_emission = np.random.dirichlet(
+                [
+                    self.parameters["alpha"] * self.beta_emission[e]
+                    for e in self.emissions
+                ]
+            )
+            self.p_emission[label] = dict(zip(self.emissions, temp_p_emission))
 
-        #
-        return label
+            # save label
+            self.states = self.states.union({label})
+
+            #
+            yield label
 
     def initialise(self, k=20):
         """
@@ -342,18 +353,16 @@ class HDPHMM(object):
         self.states = set(states)
 
         # set hyperparameters
-        self.alpha = self.alpha_prior()
-        self.gamma = self.gamma_prior()
-        self.alpha_emission = self.alpha_emission_prior()
-        self.gamma_emission = self.gamma_emission_prior()
-        self.kappa = self.kappa_prior()
+        self.parameters = {param: prior() for param, prior in self.priors.items()}
 
         # initialise chains
         [c.initialise(states) for c in self.chains]
 
         # initialise hierarchical priors
         temp_beta = sorted(
-            np.random.dirichlet([self.gamma / (self.k + 1)] * (self.k + 1))
+            np.random.dirichlet(
+                [self.parameters["gamma"] / (self.k + 1)] * (self.k + 1)
+            )
         )
         self.beta_transition = dict(zip(list(self.states) + [None], temp_beta))
         self.auxiliary_transition_variables = {
@@ -388,7 +397,9 @@ class HDPHMM(object):
 
         # make sure that we have captured states properly
         states = sorted(
-            reduce(set.union, (set(c.latent_sequence) for c in self.chains), set())
+            functools.reduce(
+                set.union, (set(c.latent_sequence) for c in self.chains), set()
+            )
         )
         self.states = set(states)
 
@@ -567,6 +578,8 @@ class HDPHMM(object):
         else:
             raise ValueError("resample_type must be either mh or complete")
 
+    # TODO: decide whether to use either MH resampling or approximation sampling and
+    # remove the alternative, unnecessary complexity in code
     def _resample_auxiliary_transition_variables(
         self, ncores=1, resample_type="mh", use_approximation=True
     ):
@@ -576,7 +589,7 @@ class HDPHMM(object):
                 s1: {
                     s2: HDPHMM._resample_auxiliary_transition_atom(
                         (s1, s2),
-                        self.alpha,
+                        self.parameters["alpha"],
                         self.beta_transition,
                         self.n_initial,
                         self.n_transition,
@@ -595,9 +608,9 @@ class HDPHMM(object):
             state_pairs = [(s1, s2) for s1 in self.states for s2 in self.states]
 
             # parallel process resamples
-            resample_partial = partial(
+            resample_partial = functools.partial(
                 HDPHMM._resample_auxiliary_transition_atom,
-                alpha=self.alpha,
+                alpha=self.parameters["alpha"],
                 beta=self.beta_transition,
                 n_initial=self.n_initial,
                 n_transition=self.n_transition,
@@ -647,7 +660,7 @@ class HDPHMM(object):
 
         # given by auxiliary transition variables plus gamma controlling unseen states
         temp_expected = [aggregate_auxiliary_variables[s2] for s2 in self.states] + [
-            self.gamma
+            self.parameters["gamma"]
         ]
         temp_expected = [max(x, eps) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
@@ -662,7 +675,7 @@ class HDPHMM(object):
         # given by number of emissions
         temp_expected = [
             sum(self.n_emission[s][e] for s in self.states)
-            + self.gamma_emission / self.n
+            + self.parameters["gamma_emission"] / self.n
             for e in self.emissions
         ]
         # nake sure no degenerate zeros (some emissions can be unseen permanently)
@@ -679,10 +692,10 @@ class HDPHMM(object):
         """
         # given by hierarchical beta value plus observed starts
         temp_expected = [
-            self.n_initial[s2] + self.alpha * self.beta_transition[s2]
+            self.n_initial[s2] + self.parameters["alpha"] * self.beta_transition[s2]
             for s2 in self.states
         ]
-        temp_expected.append(self.alpha * self.beta_transition[None])
+        temp_expected.append(self.parameters["alpha"] * self.beta_transition[None])
         temp_expected = [max((x, eps)) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
         self.p_initial = {s: p for s, p in zip(list(self.states) + [None], temp_result)}
@@ -699,19 +712,30 @@ class HDPHMM(object):
             if self.sticky:
                 temp_expected = [
                     self.n_transition[s1][s2]
-                    + self.alpha * (1 - self.kappa) * self.beta_transition[s2]
-                    + (self.alpha * self.kappa if s1 == s2 else 0)
+                    + self.parameters["alpha"]
+                    * (1 - self.parameters["kappa"])
+                    * self.beta_transition[s2]
+                    + (
+                        self.parameters["alpha"] * self.parameters["kappa"]
+                        if s1 == s2
+                        else 0
+                    )
                     for s2 in self.states
                 ]
                 temp_expected.append(
-                    self.alpha * (1 - self.kappa) * self.beta_transition[None]
+                    self.parameters["alpha"]
+                    * (1 - self.parameters["kappa"])
+                    * self.beta_transition[None]
                 )
             else:
                 temp_expected = [
-                    self.n_transition[s1][s2] + self.alpha * self.beta_transition[s2]
+                    self.n_transition[s1][s2]
+                    + self.parameters["alpha"] * self.beta_transition[s2]
                     for s2 in self.states
                 ]
-                temp_expected.append(self.alpha * self.beta_transition[None])
+                temp_expected.append(
+                    self.parameters["alpha"] * self.beta_transition[None]
+                )
             temp_expected = [max(x, eps) for x in temp_expected]
             temp_result = np.random.dirichlet(temp_expected).tolist()
             self.p_transition[s1] = {
@@ -720,7 +744,9 @@ class HDPHMM(object):
 
         # add transition probabilities from unseen states
         # note: no stickiness update because these are aggregated states
-        temp_expected = [self.alpha * b for b in self.beta_transition.values()]
+        temp_expected = [
+            self.parameters["alpha"] * b for b in self.beta_transition.values()
+        ]
         temp_expected = [max((x, eps)) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
         self.p_transition[None] = {
@@ -736,7 +762,8 @@ class HDPHMM(object):
         # find parameters
         for s in self.states:
             temp_expected = [
-                self.n_emission[s][e] + self.alpha_emission * self.beta_emission[e]
+                self.n_emission[s][e]
+                + self.parameters["alpha_emission"] * self.beta_emission[e]
                 for e in self.emissions
             ]
             temp_expected = [max((x, eps)) for x in temp_expected]
@@ -745,7 +772,9 @@ class HDPHMM(object):
             self.p_emission[s] = {e: p for e, p in zip(self.emissions, temp_result)}
 
         # add emission probabilities from unseen states
-        temp_expected = [self.alpha_emission * b for b in self.beta_emission.values()]
+        temp_expected = [
+            self.parameters["alpha_emission"] * b for b in self.beta_emission.values()
+        ]
         temp_expected = [max((x, eps)) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
         self.p_emission[None] = {e: p for e, p in zip(self.emissions, temp_result)}
@@ -769,17 +798,17 @@ class HDPHMM(object):
             [str(s)] + [str(n_emission[s][e]) for e in self.emissions]
             for s in self.states
         ]
-        emissions.insert(0, ["S_i \ E_i"] + list(map(str, self.emissions)))
+        emissions.insert(0, ["S_i \\ E_i"] + list(map(str, self.emissions)))
         transitions = [
             [str(s1)] + [str(n_transition[s1][s2]) for s2 in self.states]
             for s1 in self.states
         ]
-        transitions.insert(0, ["S_i \ S_j"] + list(map(lambda x: str(x), self.states)))
+        transitions.insert(0, ["S_i \\ S_j"] + list(map(lambda x: str(x), self.states)))
 
         # format tables
-        ti = DoubleTable(initial, "Starting state counts")
-        te = DoubleTable(emissions, "Emission counts")
-        tt = DoubleTable(transitions, "Transition counts")
+        ti = terminaltables.DoubleTable(initial, "Starting state counts")
+        te = terminaltables.DoubleTable(emissions, "Emission counts")
+        tt = terminaltables.DoubleTable(transitions, "Transition counts")
         ti.padding_left = 1
         ti.padding_right = 1
         te.padding_left = 1
@@ -825,13 +854,13 @@ class HDPHMM(object):
             for s1 in self.states
         ]
         p_initial.insert(0, ["S_i", "Y_0"])
-        p_emission.insert(0, ["S_i \ E_j"] + [str(e) for e in self.emissions])
-        p_transition.insert(0, ["S_i \ E_j"] + [str(s) for s in self.states])
+        p_emission.insert(0, ["S_i \\ E_j"] + [str(e) for e in self.emissions])
+        p_transition.insert(0, ["S_i \\ E_j"] + [str(s) for s in self.states])
 
         # format tables
-        ti = DoubleTable(p_initial, "Starting state probabilities")
-        te = DoubleTable(p_emission, "Emission probabilities")
-        tt = DoubleTable(p_transition, "Transition probabilities")
+        ti = terminaltables.DoubleTable(p_initial, "Starting state probabilities")
+        te = terminaltables.DoubleTable(p_emission, "Emission probabilities")
+        tt = terminaltables.DoubleTable(p_transition, "Transition probabilities")
         te.padding_left = 1
         te.padding_right = 1
         tt.padding_left = 1
@@ -878,7 +907,7 @@ class HDPHMM(object):
         )
 
         # create temporary function for mapping
-        resample_partial = partial(
+        resample_partial = functools.partial(
             Chain.resample_latent_sequence,
             states=list(self.states) + [None],
             p_initial=copy.deepcopy(p_initial),
@@ -903,7 +932,7 @@ class HDPHMM(object):
         # update chains using results
         # TODO: parameter check if we should be using alpha or gamma as parameter
         state_generator = dirichlet_process_generator(
-            self.gamma, output_generator=lambda: self.generate_state()
+            self.parameters["gamma"], output_generator=self.state_generator()
         )
         for chain in self.chains:
             chain.latent_sequence = [
@@ -931,41 +960,18 @@ class HDPHMM(object):
         the current and proposed model.
         :return: None
         """
-        # get current and proposed hyperparameters
-        hyperparameters_current = copy.deepcopy(
-            [
-                self.alpha,
-                self.gamma,
-                self.alpha_emission,
-                self.gamma_emission,
-                self.kappa,
-            ]
-        )
-        hyperparameters_next = copy.deepcopy(hyperparameters_current)
-        hyperparameters_proposed = [
-            self.alpha_prior(),
-            self.gamma_prior(),
-            self.alpha_emission_prior(),
-            self.gamma_emission_prior(),
-            self.kappa_prior(),
-        ]
-
         # iterate and accept each in order
-        for param_index in range(len(hyperparameters_current)):
+        for param_name in self.priors.keys():
             # don't update kappa if not a sticky chain
-            if not self.sticky and param_index == 4:
+            if param_name == "kappa" and not self.sticky:
                 continue
 
             # get current negative log likelihood
             neglogp_current = self.neglogp_sequences()
 
-            # proposed new value for current parameter only
-            hyperparameters_next[param_index] = hyperparameters_proposed[param_index]
-            self.alpha, self.gamma, self.alpha_emission, self.gamma_emission, self.kappa = tuple(
-                hyperparameters_next
-            )
-
-            # check new negative log likelihood
+            # log-likelihood under new parameter value
+            param_current = self.parameters[param_name]
+            self.parameters[param_name] = self.priors[param_name]()
             neglogp_proposed = self.neglogp_sequences()
 
             # find Metropolis Hasting acceptance probability
@@ -975,13 +981,8 @@ class HDPHMM(object):
             alpha_accepted = bool(np.random.binomial(n=1, p=p_accept))
 
             # if we do not accept, revert to the previous value
-            if alpha_accepted:
-                hyperparameters_current = copy.deepcopy(hyperparameters_next)
-            else:
-                hyperparameters_next = copy.deepcopy(hyperparameters_current)
-                self.alpha, self.gamma, self.alpha_emission, self.gamma_emission, self.kappa = tuple(
-                    hyperparameters_next
-                )
+            if not alpha_accepted:
+                self.parameters[param_name] = param_current
 
     def mcmc(self, n=1000, burn_in=500, save_every=10, ncores=1, verbose=True):
         """
@@ -995,7 +996,7 @@ class HDPHMM(object):
         resampling.
         :param verbose: bool, flag to indicate whether iteration-level statistics should
         be printed.
-        :return: A tuple containing results from every saved iteration. Each entry
+        :return: A dict containing results from every saved iteration. Each entry
         contains:
           + the number of states of the HDPHMM
           + the negative log likelihood of the emissions
@@ -1012,7 +1013,7 @@ class HDPHMM(object):
         beta_transition_hist = list()
         parameter_hist = list()
 
-        for i in tqdm(range(n)):
+        for i in tqdm.tqdm(range(n)):
             # update statistics
             states_prev = copy.copy(self.states)
 
@@ -1028,25 +1029,23 @@ class HDPHMM(object):
             # print iteration summary if required
             if verbose:
                 if i == burn_in:
-                    tqdm.write("Burn-in period complete")
+                    tqdm.tqdm.write("Burn-in period complete")
                 states_taken = states_prev - self.states
                 states_added = self.states - states_prev
-                msgs = [
+                msg = [
                     "Iter: {}".format(i),
-                    ", Likelihood: {0:.1f}".format(self.neglogp_sequences()),
-                    ", states: {}".format(len(self.states)),
-                    ", states added: {}".format(states_added)
-                    if len(states_added) > 0
-                    else "",
-                    ", states removed: {}".format(states_taken)
-                    if len(states_taken) > 0
-                    else "",
+                    "Likelihood: {0:.1f}".format(self.neglogp_sequences()),
+                    "states: {}".format(len(self.states)),
                 ]
-                tqdm.write("".join(msgs))
+                if len(states_added) > 0:
+                    msg.append("states added: {}".format(states_added))
+                if len(states_taken) > 0:
+                    msg.append("states removed: {}".format(states_taken))
+                tqdm.tqdm.write(", ".join(msg))
 
             # store results
             if i >= burn_in and i % save_every == 0:
-                # get parameters as nested lists (better import to R)
+                # get parameters as nested lists
                 p_initial = copy.deepcopy(self.p_initial)
                 p_emission = copy.deepcopy(self.p_emission)
                 p_transition = copy.deepcopy(self.p_transition)
@@ -1054,25 +1053,23 @@ class HDPHMM(object):
                 # save new data
                 state_count_hist.append(self.k)
                 sequence_prob_hist.append(self.neglogp_sequences())
-                hyperparameter_hist.append(
-                    (
-                        self.alpha,
-                        self.gamma,
-                        self.alpha_emission,
-                        self.gamma_emission,
-                        self.kappa,
-                    )
-                )
+                hyperparameter_hist.append(copy.deepcopy(self.parameters))
                 beta_emission_hist.append(self.beta_emission)
                 beta_transition_hist.append(self.beta_transition)
-                parameter_hist.append((p_initial, p_emission, p_transition))
+                parameter_hist.append(
+                    {
+                        "p_initial": p_initial,
+                        "p_emission": p_emission,
+                        "p_transition": p_transition,
+                    }
+                )
 
         # return saved observations
-        return (
-            state_count_hist,
-            sequence_prob_hist,
-            hyperparameter_hist,
-            beta_emission_hist,
-            beta_transition_hist,
-            parameter_hist,
-        )
+        return {
+            "state_count": state_count_hist,
+            "chain_neglogp": sequence_prob_hist,
+            "hyperparameters": hyperparameter_hist,
+            "beta_emission": beta_emission_hist,
+            "beta_transition": beta_transition_hist,
+            "parameters": parameter_hist,
+        }
