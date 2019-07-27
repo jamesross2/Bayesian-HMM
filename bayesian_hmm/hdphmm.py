@@ -20,7 +20,7 @@ posterior distribution for the above probabilities. In addition, we can use MAP
 estimation (for example) to fix latent states, and facilitate further analysis of a
 Chain.
 """
-
+import warnings
 import numpy as np
 import random
 import copy
@@ -28,56 +28,12 @@ import terminaltables
 import tqdm
 import functools
 import multiprocessing
-import itertools
 import string
-from scipy import special
+from scipy import special, stats
 from sympy.functions.combinatorial.numbers import stirling
 from .chain import Chain
+from .utils import label_generator, dirichlet_process_generator
 from warnings import catch_warnings
-
-
-# used to give human-friendly labels to states as they are created
-def label_generator(labels=string.ascii_lowercase):
-    """
-    :param labels: set of labels to choose from. Should not be numeric.
-    :return: a generator which  yields unique labels of the form
-    a, b, ..., z, a1, b1, ...
-    """
-    x, y, z = 0, 0, ""
-    while True:
-        if x < len(labels):
-            yield labels[x] + z
-            x += 1
-        if x == len(labels):
-            y += 1
-            z = str(y)
-            x = 0
-
-
-# used to choose from new states after resampling latent states
-def dirichlet_process_generator(alpha=1, output_generator=None):
-    """
-    Returns a generator object which yields subsequent draws from a single dirichlet
-    process.
-    :param alpha: alpha parameter of the Dirichlet process
-    :param output_generator: generator which yields unique symbols
-    :return: generator object
-    """
-    if output_generator is None:
-        output_generator = itertools.count(start=0, step=1)
-    count = 0
-    weights = {}
-    while True:
-        if random.uniform(0, 1) > (count / (count + alpha)):
-            val = next(output_generator)
-            weights[val] = 1
-        else:
-            val = np.random.choice(
-                list(weights.keys()), 1, p=list(x / count for x in weights.values())
-            )[0]
-            weights[val] += 1
-        count += 1
-        yield val
 
 
 class HDPHMM(object):
@@ -237,7 +193,7 @@ class HDPHMM(object):
     def tabulate(self):
         """
         Convert the latent and emission sequences for all chains into a single numpy
-        array. Array contains an index, which matches a Chain's position in
+        array. Array contains an index which matches a Chain's index in
         HDPHMM.chains, the current latent state, and the emission for all chains at
         all times.
         :return: numpy array with dimension (l, 3), where l is the length of the Chain
@@ -484,7 +440,7 @@ class HDPHMM(object):
             )
             p_cumulative += np.exp(logp_accept)
         # breaks out of loop after m is sufficiently large
-        return m
+        return max(m, 1)
 
     @staticmethod
     def _resample_auxiliary_transition_atom_mh(
@@ -618,9 +574,9 @@ class HDPHMM(object):
                 resample_type=resample_type,
                 use_approximation=use_approximation,
             )
-
-            with multiprocessing.Pool(processes=ncores) as pool:
-                auxiliary_transition_variables = pool.map(resample_partial, state_pairs)
+            pool = multiprocessing.Pool(processes=ncores)
+            auxiliary_transition_variables = pool.map(resample_partial, state_pairs)
+            pool.close()
 
             # store as dictionary
             for pair_n in range(len(state_pairs)):
@@ -630,7 +586,7 @@ class HDPHMM(object):
                 ] = auxiliary_transition_variables[pair_n]
 
     def resample_beta_transition(
-        self, ncores=1, auxiliary_resample_type="mh", use_approximation=True, eps=1e-2
+        self, ncores=1, auxiliary_resample_type="mh", use_approximation=True, eps=1e-6
     ):
         """
         Resample the beta values used to calculate the starting and transition
@@ -653,20 +609,18 @@ class HDPHMM(object):
         )
 
         # aggregate
-        aggregate_auxiliary_variables = {
-            s2: sum(self.auxiliary_transition_variables[s1][s2] for s1 in self.states)
+        aggregate_auxiliary_variables = [
+            sum(self.auxiliary_transition_variables[s1][s2] for s1 in self.states)
             for s2 in self.states
-        }
+        ]
 
         # given by auxiliary transition variables plus gamma controlling unseen states
-        temp_expected = [aggregate_auxiliary_variables[s2] for s2 in self.states] + [
-            self.parameters["gamma"]
-        ]
+        temp_expected = aggregate_auxiliary_variables + [self.parameters["gamma"]]
         temp_expected = [max(x, eps) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
         self.beta_transition = dict(zip(list(self.states) + [None], temp_result))
 
-    def resample_beta_emission(self, eps=1e-2):
+    def resample_beta_emission(self, eps=1e-6):
         """
         Resample the beta values used to calculate the emission probabilties.
         :param eps: Minimum value for expected value before resampling.
@@ -678,12 +632,12 @@ class HDPHMM(object):
             + self.parameters["gamma_emission"] / self.n
             for e in self.emissions
         ]
-        # nake sure no degenerate zeros (some emissions can be unseen permanently)
+        # make sure no degenerate zeros (some emissions can be unseen permanently)
         temp_expected = [max(x, eps) for x in temp_expected]
         temp_result = np.random.dirichlet(temp_expected).tolist()
         self.beta_emission = dict(zip(self.emissions, temp_result))
 
-    def resample_p_initial(self, eps=1e-2):
+    def resample_p_initial(self, eps=1e-6):
         """
         Resample the starting probabilities. Performed as a sample from the posterior
         distribution, which is a Dirichlet with pseudocounts and actual counts combined.
@@ -700,7 +654,7 @@ class HDPHMM(object):
         temp_result = np.random.dirichlet(temp_expected).tolist()
         self.p_initial = {s: p for s, p in zip(list(self.states) + [None], temp_result)}
 
-    def resample_p_transition(self, eps=1e-2):
+    def resample_p_transition(self, eps=1e-6):
         """
         Resample the transition probabilities from the current beta values and kappa
         value, if the chain is sticky.
@@ -753,7 +707,7 @@ class HDPHMM(object):
             s2: p for s2, p in zip(list(self.states) + [None], temp_result)
         }
 
-    def resample_p_emission(self, eps=1e-2):
+    def resample_p_emission(self, eps=1e-6):
         """
         resample emission parameters from emission priors and counts.
         :param eps: minimum expected value passed to Dirichlet distribution
@@ -880,7 +834,7 @@ class HDPHMM(object):
         #
         return None
 
-    def neglogp_sequences(self):
+    def neglogp_chains(self):
         """
         Calculate the negative log likelihood of the chain, given its current
         latent states. This is calculated based on the observed emission sequences only,
@@ -888,8 +842,67 @@ class HDPHMM(object):
         :return:
         """
         return sum(
-            chain.neglogp_sequence(self.p_initial, self.p_emission, self.p_transition)
+            chain.neglogp_chain(self.p_initial, self.p_emission, self.p_transition)
             for chain in self.chains
+        )
+
+    def neglogp_beta_transition(self):
+        """
+        Calculate the negative log likelihood of the current beta_emission and
+        beta_transition values, given the current hyperparameter values.
+        :return:
+        """
+        aggregate_auxiliary_variables = [
+            sum(self.auxiliary_transition_variables[s1][s2] for s1 in self.states)
+            for s2 in self.states
+        ]
+        p_transition = np.log(
+            stats.dirichlet.pdf(
+                [self.beta_transition[s] for s in list(self.states) + [None]],
+                aggregate_auxiliary_variables + [self.parameters["gamma"]],
+            )
+        )
+        return -p_transition
+
+    def neglogp_beta_emission(self):
+        """
+        Calculate the negative log likelihood of the current beta_emission and
+        beta_transition values, given the current hyperparameter values.
+        :return:
+        """
+        temp_expected = [
+            sum(self.n_emission[s][e] for s in self.states)
+            + self.parameters["gamma_emission"] / self.n
+            for e in self.emissions
+        ]
+        p_transition = np.log(
+            stats.dirichlet.pdf(
+                [self.beta_emission[e] for e in self.emissions], temp_expected
+            )
+        )
+        return -p_transition
+
+    def neglogp_parameters(self):
+        """
+        Calculate the negative log likelihood of the actual HDPHMM parameters (the
+        initial, transition and emission probabilities).
+        :return:
+        """
+        warnings.warn("Not implemented")
+        return 0
+
+    def neglogp(self):
+        """
+        Negative log-likelihood of the entire HDPHMM object. Combines the likelihoods of
+        the transition and emission beta parameters, and of the chains themselves.
+        Does not include the probabilities of the hyperparameter priors.
+        :return: non-negative float
+        """
+        return (
+            self.neglogp_beta_transition()
+            + self.neglogp_beta_emission()
+            + self.neglogp_parameters()
+            + self.neglogp_chains()
         )
 
     def resample_chains(self, ncores=1):
@@ -916,14 +929,12 @@ class HDPHMM(object):
         )
 
         # parallel process resamples
-        with multiprocessing.Pool(processes=ncores) as pool:
-            new_latent_sequences = pool.map(
-                resample_partial,
-                (
-                    (chain.emission_sequence, chain.latent_sequence)
-                    for chain in self.chains
-                ),
-            )
+        pool = multiprocessing.Pool(processes=ncores)
+        new_latent_sequences = pool.map(
+            resample_partial,
+            ((chain.emission_sequence, chain.latent_sequence) for chain in self.chains),
+        )
+        pool.close()
 
         # assign returned latent sequences back to Chains
         for i in range(self.c):
@@ -949,6 +960,10 @@ class HDPHMM(object):
         Not yet implemented.
         :return: None
         """
+        raise NotImplementedError(
+            "This has not yet been written!"
+            + " Ping the author if you want it to happen."
+        )
         pass
 
     def resample_hyperparameters(self):
@@ -967,12 +982,16 @@ class HDPHMM(object):
                 continue
 
             # get current negative log likelihood
-            neglogp_current = self.neglogp_sequences()
+            neglogp_current = (
+                self.neglogp_beta_transition() + self.neglogp_beta_emission()
+            )
 
             # log-likelihood under new parameter value
             param_current = self.parameters[param_name]
             self.parameters[param_name] = self.priors[param_name]()
-            neglogp_proposed = self.neglogp_sequences()
+            neglogp_proposed = (
+                self.neglogp_beta_transition() + self.neglogp_beta_emission()
+            )
 
             # find Metropolis Hasting acceptance probability
             p_accept = min(1, np.exp(-neglogp_proposed + neglogp_current))
@@ -996,29 +1015,34 @@ class HDPHMM(object):
         resampling.
         :param verbose: bool, flag to indicate whether iteration-level statistics should
         be printed.
-        :return: A dict containing results from every saved iteration. Each entry
-        contains:
+        :return: A dict containing results from every saved iteration. Includes:
           + the number of states of the HDPHMM
           + the negative log likelihood of the emissions
+          + the negative log likelihood of the beta parameters
           + the hyperparameters of the HDPHMM
           + the emission beta values
           + the transition beta values
           + all probability dictionary objects
         """
-        # store parameters
-        state_count_hist = list()
-        sequence_prob_hist = list()
-        hyperparameter_hist = list()
-        beta_emission_hist = list()
-        beta_transition_hist = list()
-        parameter_hist = list()
+        # store parameters in a single dict
+        results = {
+            "state_count": list(),
+            "neglogp": list(),
+            "neglogp_chain": list(),
+            "neglogp_beta_transition": list(),
+            "neglogp_beta_emission": list(),
+            "hyperparameters": list(),
+            "beta_emission": list(),
+            "beta_transition": list(),
+            "parameters": list(),
+        }
 
         for i in tqdm.tqdm(range(n)):
             # update statistics
             states_prev = copy.copy(self.states)
 
             # work down hierarchy when resampling
-            self.resample_beta_transition(ncores=1)
+            self.resample_beta_transition(ncores=ncores)
             self.resample_beta_emission()
             self.resample_p_initial()
             self.resample_p_transition()
@@ -1034,7 +1058,7 @@ class HDPHMM(object):
                 states_added = self.states - states_prev
                 msg = [
                     "Iter: {}".format(i),
-                    "Likelihood: {0:.1f}".format(self.neglogp_sequences()),
+                    "Likelihood: {0:.1f}".format(self.neglogp_chains()),
                     "states: {}".format(len(self.states)),
                 ]
                 if len(states_added) > 0:
@@ -1051,12 +1075,17 @@ class HDPHMM(object):
                 p_transition = copy.deepcopy(self.p_transition)
 
                 # save new data
-                state_count_hist.append(self.k)
-                sequence_prob_hist.append(self.neglogp_sequences())
-                hyperparameter_hist.append(copy.deepcopy(self.parameters))
-                beta_emission_hist.append(self.beta_emission)
-                beta_transition_hist.append(self.beta_transition)
-                parameter_hist.append(
+                results["state_count"].append(self.k)
+                results["neglogp"].append(self.neglogp())
+                results["neglogp_chain"].append(self.neglogp_chains())
+                results["neglogp_beta_transition"].append(
+                    self.neglogp_beta_transition()
+                )
+                results["neglogp_beta_emission"].append(self.neglogp_beta_emission())
+                results["hyperparameters"].append(copy.deepcopy(self.parameters))
+                results["beta_emission"].append(self.beta_emission)
+                results["beta_transition"].append(self.beta_transition)
+                results["parameters"].append(
                     {
                         "p_initial": p_initial,
                         "p_emission": p_emission,
@@ -1065,11 +1094,4 @@ class HDPHMM(object):
                 )
 
         # return saved observations
-        return {
-            "state_count": state_count_hist,
-            "chain_neglogp": sequence_prob_hist,
-            "hyperparameters": hyperparameter_hist,
-            "beta_emission": beta_emission_hist,
-            "beta_transition": beta_transition_hist,
-            "parameters": parameter_hist,
-        }
+        return results

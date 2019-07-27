@@ -17,7 +17,10 @@ def test_mcmc():
     # specify expected dict keys at nested levels
     expected_results_keys = [
         "state_count",
-        "chain_neglogp",
+        "neglogp",
+        "neglogp_chain",
+        "neglogp_beta_transition",
+        "neglogp_beta_emission",
         "hyperparameters",
         "beta_emission",
         "beta_transition",
@@ -32,14 +35,23 @@ def test_mcmc():
     ]
 
     # check that results contains expected elements
-    assert len(results) == 6
+    assert len(results) == 9
     assert list(results.keys()) == expected_results_keys
     assert all(len(r) == 8 for r in results.values())
     assert all(type(r) == list for r in results.values())
 
     # state count and neglogp are straightforward sequences
     assert all(type(x) == int for x in results["state_count"])
-    assert all(type(x) == numpy.float64 for x in results["chain_neglogp"])
+    assert all(
+        type(x) == numpy.float64
+        for k in [
+            "neglogp",
+            "neglogp_chain",
+            "neglogp_beta_transition",
+            "neglogp_beta_emission",
+        ]
+        for x in results[k]
+    )
 
     # hyperparameters is a list of dicts with atmoic values
     assert all(type(x) == dict for x in results["hyperparameters"])

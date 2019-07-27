@@ -54,11 +54,92 @@ hmm = bayesian_hmm.HDPHMM(sequences, sticky=False)
 hmm.initialise(k=20)
 
 # estimate parameters, making use of multithreading functionality
-results = hmm.mcmc(n=500, burn_in=100)
+results = hmm.mcmc(n=500, burn_in=100, ncores=3, save_every=1)
 
 # print final probability estimates (expect 10 latent states)
 hmm.print_probabilities()
 ```
+
+The final command prints the transition and emission probabiltiies of the model after
+MCMC using the [`terminaltables`](https://pypi.org/project/terminaltables/) package. The 
+code below visualises the results using [`pandas`](https://pypi.org/project/pandas/)
+and [`seaborn`](https://pypi.org/project/seaborn/). For simplicity, we will stick with
+the returned MAP estimate, but a more complete analysis might use a more sophisticated
+approach.
+
+```python
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# plot the number of states as a histogram
+sns.countplot(results['state_count'])
+plt.show()
+
+# plot the starting probabilities of the sampled MAP estimate
+with results['neglogp'].index(min(results['neglogp'])) as n:
+    parameters_map = results['parameters'][n]
+    sns.barplot(
+        x=list(parameters_map['p_initial'].keys()), 
+        y=list(parameters_map['p_initial'].values())
+    )
+    plt.show()
+
+# convert list of hyperparameters into a DataFrame
+results_df = pd.DataFrame(results['hyperparameters'])
+# results_df['log_likelihood'] = - pd.Series(results['chain_neglogp'])
+# results_df['state_count'] = results['state_count']
+hyperparam_posterior_df = (
+    results_df
+    .reset_index()
+    .melt(id_vars=['index'])
+    .rename(columns={'index': 'iteration'})
+)
+hyperparam_prior_df = pd.concat(
+    pd.DataFrame(
+        {'iteration': range(500), 'variable': k, 'value': [v() for _ in range(500)]}
+    )
+    for k, v in hmm.priors.items()
+)
+hyperparam_df = pd.concat(
+    (hyperparam_prior_df, hyperparam_posterior_df), 
+    keys=['prior', 'posterior'], 
+    names=('type','index')
+)
+hyperparam_df.reset_index(inplace=True)
+
+# plot the time series of hyperparameter values
+g = sns.FacetGrid(
+    hyperparam_df[hyperparam_df['type'] == 'posterior'], 
+    col='variable', 
+    col_wrap=3, 
+    sharey=False
+)
+g.map(sns.lineplot, 'iteration', 'value')
+plt.show()
+
+# alternatively, plot a posterior for each parameter
+g = sns.FacetGrid(
+    hyperparam_df[hyperparam_df['type'] == 'posterior'].loc[lambda df: df['variable'] != 'kappa'], 
+    col='variable', 
+    col_wrap=3, 
+    sharex=False
+)
+g.map(sns.distplot, 'value')
+plt.show()
+
+# advanced: plot sampled prior & sampled posterior together
+g = sns.FacetGrid(
+    hyperparam_df[hyperparam_df['variable'] != 'kappa'],
+    col='variable', 
+    col_wrap=3, 
+    sharex=False,
+    hue='type'
+)
+g.map(sns.distplot, 'value')
+g.add_legend()
+plt.show()
+```  
 
 The `bayesian_hmm` package can handle more advanced usage, including:
   * Multiple emission sequences,
@@ -66,6 +147,7 @@ The `bayesian_hmm` package can handle more advanced usage, including:
   * Any categorical emission distribution,
   * Multithreaded MCMC estimation, and
   * Starting probability estimation, which share a dirichlet prior with the transition probabilities.
+
 
 
 ## Inference
