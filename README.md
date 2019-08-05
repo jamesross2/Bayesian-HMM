@@ -1,6 +1,6 @@
 # Bayesian Hidden Markov Models
 
-[![Build Status](https://travis-ci.org/jamesross2/Bayesian-HMM.svg?branch=master)](https://travis-ci.org/jamesross2/Bayesian-HMM)
+[![Build Status](https://img.shields.io/travis/jamesross2/Bayesian-HMM?logo=travis&style=flat-square)](https://travis-ci.org/jamesross2/Bayesian-HMM?style=flat-square)
 
 This code implements a non-parametric Bayesian Hidden Markov model,
 sometimes referred to as a Hierarchical Dirichlet Process Hidden Markov
@@ -77,7 +77,7 @@ sns.countplot(results['state_count'])
 plt.show()
 
 # plot the starting probabilities of the sampled MAP estimate
-with results['neglogp'].index(min(results['neglogp'])) as n:
+with results['neglogp_chain'].index(min(results['neglogp_chain'])) as n:
     parameters_map = results['parameters'][n]
     sns.barplot(
         x=list(parameters_map['p_initial'].keys()), 
@@ -86,11 +86,8 @@ with results['neglogp'].index(min(results['neglogp'])) as n:
     plt.show()
 
 # convert list of hyperparameters into a DataFrame
-results_df = pd.DataFrame(results['hyperparameters'])
-# results_df['log_likelihood'] = - pd.Series(results['chain_neglogp'])
-# results_df['state_count'] = results['state_count']
 hyperparam_posterior_df = (
-    results_df
+    pd.DataFrame(results['hyperparameters'])
     .reset_index()
     .melt(id_vars=['index'])
     .rename(columns={'index': 'iteration'})
@@ -107,26 +104,6 @@ hyperparam_df = pd.concat(
     names=('type','index')
 )
 hyperparam_df.reset_index(inplace=True)
-
-# plot the time series of hyperparameter values
-g = sns.FacetGrid(
-    hyperparam_df[hyperparam_df['type'] == 'posterior'], 
-    col='variable', 
-    col_wrap=3, 
-    sharey=False
-)
-g.map(sns.lineplot, 'iteration', 'value')
-plt.show()
-
-# alternatively, plot a posterior for each parameter
-g = sns.FacetGrid(
-    hyperparam_df[hyperparam_df['type'] == 'posterior'].loc[lambda df: df['variable'] != 'kappa'], 
-    col='variable', 
-    col_wrap=3, 
-    sharex=False
-)
-g.map(sns.distplot, 'value')
-plt.show()
 
 # advanced: plot sampled prior & sampled posterior together
 g = sns.FacetGrid(
