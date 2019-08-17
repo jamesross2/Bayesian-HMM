@@ -78,11 +78,20 @@ approach.
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+plt.style.use('ggplot')
 
 # plot the number of states as a histogram
 sns.countplot(results['state_count'])
+plt.title('Number of latent states')
+plt.xlabel('Number of latent states')
+plt.ylabel('Number of iterations')
 plt.show()
+```
 
+
+![State counts](https://raw.githubusercontent.com/jamesross2/Bayesian-HMM/master/outputs/plot_state_count.png)
+
+```python
 # plot the starting probabilities of the sampled MAP estimate
 map_index = results['chain_loglikelihood'].index(min(results['chain_loglikelihood']))
 parameters_map = results['parameters'][map_index]
@@ -90,8 +99,15 @@ sns.barplot(
     x=list(parameters_map['p_initial'].keys()), 
     y=list(parameters_map['p_initial'].values())
 )
+plt.title('Starting state probabilities')
+plt.xlabel('Latent state')
+plt.ylabel('MAP estimate for initial probability')
 plt.show()
+```
 
+![MAP initial probabilities](https://raw.githubusercontent.com/jamesross2/Bayesian-HMM/master/outputs/plot_p_initial.png)
+
+```python
 # convert list of hyperparameters into a DataFrame
 hyperparam_posterior_df = (
     pd.DataFrame(results['hyperparameters'])
@@ -122,8 +138,15 @@ g = sns.FacetGrid(
 )
 g.map(sns.distplot, 'value')
 g.add_legend()
+g.fig.suptitle('Hyperparameter prior & posterior estimates')
+plt.subplots_adjust(top=0.9)
+plt.xlabel('Value')
+plt.ylabel('Density')
 plt.show()
-```  
+```
+
+
+![Hyperparameter posteriors](https://raw.githubusercontent.com/jamesross2/Bayesian-HMM/master/outputs/plot_hyperparameters.png)
 
 The `bayesian_hmm` package can handle more advanced usage, including:
   * Multiple emission sequences,
