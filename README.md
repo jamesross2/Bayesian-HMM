@@ -53,14 +53,21 @@ sequences = [base_sequence * 20 for _ in range(50)]
 hmm = bayesian_hmm.HDPHMM(sequences, sticky=False)
 hmm.initialise(k=20)
 
-# estimate parameters, making use of multithreading functionality
-results = hmm.mcmc(n=500, burn_in=100, ncores=3, save_every=1)
+results = hmm.mcmc(n=500, burn_in=100, ncores=3, save_every=10, verbose=True)
+```
 
+This model typically converges to 10 latent states, a sensible posterior. In some cases,
+it converges to 11 latent states, in which a starting state which outputs '0' with high
+confidence is separate to another latent start which outputs '0' with high confidence.
+We can inspect this using the printed output, or with probability matrices printed 
+directly.
+
+```python
 # print final probability estimates (expect 10 latent states)
 hmm.print_probabilities()
 ```
 
-The final command prints the transition and emission probabiltiies of the model after
+This final command prints the transition and emission probabiltiies of the model after
 MCMC using the [`terminaltables`](https://pypi.org/project/terminaltables/) package. The 
 code below visualises the results using [`pandas`](https://pypi.org/project/pandas/)
 and [`seaborn`](https://pypi.org/project/seaborn/). For simplicity, we will stick with
@@ -77,13 +84,13 @@ sns.countplot(results['state_count'])
 plt.show()
 
 # plot the starting probabilities of the sampled MAP estimate
-with results['neglogp_chain'].index(min(results['neglogp_chain'])) as n:
-    parameters_map = results['parameters'][n]
-    sns.barplot(
-        x=list(parameters_map['p_initial'].keys()), 
-        y=list(parameters_map['p_initial'].values())
-    )
-    plt.show()
+map_index = results['chain_loglikelihood'].index(min(results['chain_loglikelihood']))
+parameters_map = results['parameters'][map_index]
+sns.barplot(
+    x=list(parameters_map['p_initial'].keys()), 
+    y=list(parameters_map['p_initial'].values())
+)
+plt.show()
 
 # convert list of hyperparameters into a DataFrame
 hyperparam_posterior_df = (

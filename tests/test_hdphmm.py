@@ -48,9 +48,9 @@ def test_sticky_initialisation():
     hmm_slippery.initialise(20)
 
     # check chain initialises correctly in both cases
-    assert 0 <= hmm_sticky.parameters["kappa"] <= 1
+    assert 0 <= hmm_sticky.hyperparameters["kappa"] <= 1
     assert hmm_sticky.priors["kappa"] != (lambda: 0)
-    assert hmm_slippery.parameters["kappa"] == 0
+    assert hmm_slippery.hyperparameters["kappa"] == 0
     assert all(hmm_slippery.priors["kappa"]() == 0 for _ in range(100))
 
 
@@ -73,11 +73,11 @@ def test_manual_priors():
     }
 
     # check that priors work in all cases
-    assert all(param > 0 for param in hmms["default"].parameters.values())
-    assert all(param < 0 for param in hmms["all"].parameters.values())
-    assert hmms["single"].parameters["alpha"] < 0
+    assert all(param > 0 for param in hmms["default"].hyperparameters.values())
+    assert all(param < 0 for param in hmms["all"].hyperparameters.values())
+    assert hmms["single"].hyperparameters["alpha"] < 0
     assert all(
-        hmms["single"].parameters[param] > 0
+        hmms["single"].hyperparameters[param] > 0
         for param in priors_default.keys()
         if param != "alpha"
     )

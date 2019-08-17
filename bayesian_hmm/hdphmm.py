@@ -20,7 +20,6 @@ posterior distribution for the above probabilities. In addition, we can use MAP
 estimation (for example) to fix latent states, and facilitate further analysis of a
 Chain.
 """
-import warnings
 import numpy as np
 import random
 import copy
@@ -32,7 +31,7 @@ import string
 from scipy import special, stats
 from sympy.functions.combinatorial.numbers import stirling
 from .chain import Chain
-from .utils import label_generator, dirichlet_process_generator
+from .utils import label_generator, dirichlet_process_generator, shrink_probabilities
 from warnings import catch_warnings
 
 
@@ -107,16 +106,15 @@ class HDPHMM(object):
         if len(self.priors) > 5:
             raise ValueError("Unknown hyperparameter priors present")
 
-        # adjust kappa prior for non-sticky chains
         if not self.sticky:
             self.priors["kappa"] = lambda: 0
             if priors is not None and "kappa" in priors:
-                raise ValueError("`sticky` is False, but non-zero kappa prior given")
+                raise ValueError("`sticky` is False, but kappa prior function given")
 
         # store initial hyperparameter values
-        self.parameters = {param: prior() for param, prior in self.priors.items()}
+        self.hyperparameters = {param: prior() for param, prior in self.priors.items()}
 
-        # use internal properties to store fit parameters
+        # use internal properties to store fit hyperparameters
         self.n_initial = {None: 0}
         self.n_emission = {None: {None: 0}}
         self.n_transition = {None: {None: 0}}
@@ -220,7 +218,7 @@ class HDPHMM(object):
         )
         return fs.format(C=self.c, K=self.k, N=self.n, Ob=sum(c.T for c in self.chains))
 
-    def state_generator(self):
+    def state_generator(self, eps=1e-12):
         """
         Create a new state for the HDPHMM, and update all parameters accordingly.
         This involves updating
@@ -236,24 +234,24 @@ class HDPHMM(object):
             # update counts with zeros (assume _n_update called later)
             # state irrelevant for constant count (all zeros)
             self.n_initial[label] = 0
-            self.n_transition[label] = {s: 0 for s in self.states.union({label})}
+            self.n_transition[label] = {s: 0 for s in self.states.union({label, None})}
             [self.n_transition[s].update({label: 0}) for s in self.states]
             self.n_emission[label] = {e: 0 for e in self.emissions}
 
             # update auxiliary transition variables
             self.auxiliary_transition_variables[label] = {
-                s2: 1 for s2 in list(self.states) + [label]
+                s2: 1 for s2 in list(self.states) + [label, None]
             }
             for s1 in self.states:
                 self.auxiliary_transition_variables[s1][label] = 1
 
             # update beta_transition value and split out from current pseudo state
-            temp_beta = np.random.beta(1, self.parameters["gamma"])
+            temp_beta = np.random.beta(1, self.hyperparameters["gamma"])
             self.beta_transition[label] = temp_beta * self.beta_transition[None]
             self.beta_transition[None] = (1 - temp_beta) * self.beta_transition[None]
 
             # update starting probability
-            temp_p_initial = np.random.beta(1, self.parameters["gamma"])
+            temp_p_initial = np.random.beta(1, self.hyperparameters["gamma"])
             self.p_initial[label] = temp_p_initial * self.p_initial[None]
             self.p_initial[None] = (1 - temp_p_initial) * self.p_initial[None]
 
@@ -261,14 +259,15 @@ class HDPHMM(object):
             temp_p_transition = np.random.dirichlet(
                 [self.beta_transition[s] for s in list(self.states) + [label, None]]
             )
-            self.p_transition[label] = dict(
+            p_transition_label = dict(
                 zip(list(self.states) + [label, None], temp_p_transition)
             )
+            self.p_transition[label] = shrink_probabilities(p_transition_label, eps)
 
             # update transitions into new state
             for state in self.states.union({None}):
                 # (note that label not included in self.states)
-                temp_p_transition = np.random.beta(1, self.parameters["gamma"])
+                temp_p_transition = np.random.beta(1, self.hyperparameters["gamma"])
                 self.p_transition[state][label] = (
                     self.p_transition[state][None] * temp_p_transition
                 )
@@ -279,7 +278,7 @@ class HDPHMM(object):
             # update emission probabilities
             temp_p_emission = np.random.dirichlet(
                 [
-                    self.parameters["alpha"] * self.beta_emission[e]
+                    self.hyperparameters["alpha"] * self.beta_emission[e]
                     for e in self.emissions
                 ]
             )
@@ -309,7 +308,7 @@ class HDPHMM(object):
         self.states = set(states)
 
         # set hyperparameters
-        self.parameters = {param: prior() for param, prior in self.priors.items()}
+        self.hyperparameters = {param: prior() for param, prior in self.priors.items()}
 
         # initialise chains
         [c.initialise(states) for c in self.chains]
@@ -317,19 +316,22 @@ class HDPHMM(object):
         # initialise hierarchical priors
         temp_beta = sorted(
             np.random.dirichlet(
-                [self.parameters["gamma"] / (self.k + 1)] * (self.k + 1)
-            )
+                [self.hyperparameters["gamma"] / (self.k + 1)] * (self.k + 1)
+            ),
+            reverse=True,
         )
-        self.beta_transition = dict(zip(list(self.states) + [None], temp_beta))
+        beta_transition = dict(zip(list(self.states) + [None], temp_beta))
+        self.beta_transition = shrink_probabilities(beta_transition)
         self.auxiliary_transition_variables = {
-            s1: {s2: 1 for s2 in self.states} for s1 in self.states
+            s1: {s2: 1 for s2 in self.states.union({None})}
+            for s1 in self.states.union({None})
         }
 
         # update counts before resampling
         self._n_update()
 
         # resample remaining hyperparameters
-        self._resample_auxiliary_transition_variables()
+        self.resample_beta_transition()
         self.resample_beta_emission()
         self.resample_p_initial()
         self.resample_p_transition()
@@ -337,6 +339,36 @@ class HDPHMM(object):
 
         # set initialised flag
         self._initialised = True
+
+    def update_states(self):
+        """
+        Remove defunct states from the internal set of states, and merge all parameters
+        associated with these states back into the 'None' values.
+        """
+        # identify states to merge
+        states_prev = self.states
+        states_next = set(
+            sorted(
+                functools.reduce(
+                    set.union, (set(c.latent_sequence) for c in self.chains), set()
+                )
+            )
+        )
+        states_removed = states_prev - states_next
+
+        # merge old probabilities into None
+        for state in states_removed:
+            # remove entries and add to aggregate None state
+            self.beta_transition[None] += self.beta_transition.pop(state)
+            self.p_initial[None] += self.p_initial.pop(state)
+            for s1 in states_next.union({None}):
+                self.p_transition[s1][None] += self.p_transition[s1].pop(state)
+
+            # remove transition vector entirely
+            del self.p_transition[state]
+
+        # update internal state tracking
+        self.states = states_next
 
     def _n_update(self):
         """
@@ -351,20 +383,17 @@ class HDPHMM(object):
                 "Chains must be initialised before calculating fit parameters"
             )
 
-        # make sure that we have captured states properly
-        states = sorted(
-            functools.reduce(
-                set.union, (set(c.latent_sequence) for c in self.chains), set()
-            )
-        )
-        self.states = set(states)
-
         # transition count for non-oracle transitions
-        n_initial = {s: 0 for s in self.states}
-        n_emission = {s: {e: 0 for e in self.emissions} for s in self.states}
-        n_transition = {s1: {s2: 0 for s2 in self.states} for s1 in self.states}
+        n_initial = {s: 0 for s in self.states.union({None})}
+        n_emission = {
+            s: {e: 0 for e in self.emissions} for s in self.states.union({None})
+        }
+        n_transition = {
+            s1: {s2: 0 for s2 in self.states.union({None})}
+            for s1 in self.states.union({None})
+        }
 
-        # increment all relevant parameters while looping over sequence
+        # increment all relevant hyperparameters while looping over sequence
         for chain in self.chains:
             # increment initial states emitted by oracle
             n_initial[chain.latent_sequence[0]] += 1
@@ -381,7 +410,7 @@ class HDPHMM(object):
                     chain.latent_sequence[t + 1]
                 ] += 1
 
-        # store recalculated fit parameters
+        # store recalculated fit hyperparameters
         self.n_initial = n_initial
         self.n_emission = n_emission
         self.n_transition = n_transition
@@ -545,13 +574,13 @@ class HDPHMM(object):
                 s1: {
                     s2: HDPHMM._resample_auxiliary_transition_atom(
                         (s1, s2),
-                        self.parameters["alpha"],
-                        self.beta_transition,
-                        self.n_initial,
-                        self.n_transition,
-                        self.auxiliary_transition_variables,
-                        resample_type,
-                        use_approximation,
+                        alpha=self.hyperparameters["alpha"],
+                        beta=self.beta_transition,
+                        n_initial=self.n_initial,
+                        n_transition=self.n_transition,
+                        auxiliary_transition_variables=self.auxiliary_transition_variables,
+                        resample_type=resample_type,
+                        use_approximation=use_approximation,
                     )
                     for s2 in self.states
                 }
@@ -566,7 +595,7 @@ class HDPHMM(object):
             # parallel process resamples
             resample_partial = functools.partial(
                 HDPHMM._resample_auxiliary_transition_atom,
-                alpha=self.parameters["alpha"],
+                alpha=self.hyperparameters["alpha"],
                 beta=self.beta_transition,
                 n_initial=self.n_initial,
                 n_transition=self.n_transition,
@@ -585,8 +614,23 @@ class HDPHMM(object):
                     state2
                 ] = auxiliary_transition_variables[pair_n]
 
+    def _get_beta_transition_metaparameters(self):
+        """
+        Calculate parameters for the Dirichlet posterior of the transition beta
+        variables (with infinite states aggregated into 'None' state)
+        :return: dict, with a key for each state and None, and values equal to parameter
+        values
+        """
+        # aggregate
+        params = {
+            s2: sum(self.auxiliary_transition_variables[s1][s2] for s1 in self.states)
+            for s2 in self.states
+        }
+        params[None] = self.hyperparameters["gamma"]
+        return params
+
     def resample_beta_transition(
-        self, ncores=1, auxiliary_resample_type="mh", use_approximation=True, eps=1e-6
+        self, ncores=1, auxiliary_resample_type="mh", use_approximation=True, eps=1e-12
     ):
         """
         Resample the beta values used to calculate the starting and transition
@@ -597,141 +641,247 @@ class HDPHMM(object):
         in which the auxiliary transition variables are estimated.
         :param use_approximation: bool, flag to indicate whether an approximate
         resampling should occur. ignored if `auxiliary_resample_type` is "mh"
-        :param eps: error term used in approximations to avoid numerical roundoff errors
+        :param eps: shrinkage parameter to avoid rounding error.
         :return: None
         """
-
-        # resample auxiliary variables
+        # auxiliary variables must be resampled to resample beta variables
         self._resample_auxiliary_transition_variables(
             ncores=ncores,
             resample_type=auxiliary_resample_type,
             use_approximation=use_approximation,
         )
 
+        # resample from Dirichlet posterior
+        params = self._get_beta_transition_metaparameters()
+        temp_result = np.random.dirichlet(list(params.values())).tolist()
+        beta_transition = dict(zip(list(params.keys()), temp_result))
+        self.beta_transition = shrink_probabilities(beta_transition, eps)
+
+    def calculate_beta_transition_loglikelihood(self):
+        # get Dirichlet hyperparameters
+        params = self._get_beta_transition_metaparameters()
+        ll_transition = np.log(
+            stats.dirichlet.pdf(
+                [self.beta_transition[s] for s in params.keys()],
+                [params[s] for s in params.keys()],
+            )
+        )
+        return ll_transition
+
+    def _get_beta_emission_metaparameters(self):
+        """
+        Calculate parameters for the Dirichlet posterior of the emission beta variables
+        (with infinite states aggregated into 'None' state)
+        :return: dict, with a key for each emission, and values equal to parameter
+        values
+        """
         # aggregate
-        aggregate_auxiliary_variables = [
-            sum(self.auxiliary_transition_variables[s1][s2] for s1 in self.states)
-            for s2 in self.states
-        ]
+        params = {
+            e: sum(self.n_emission[s][e] for s in self.states)
+            + self.hyperparameters["gamma_emission"] / self.n
+            for e in self.emissions
+        }
+        return params
 
-        # given by auxiliary transition variables plus gamma controlling unseen states
-        temp_expected = aggregate_auxiliary_variables + [self.parameters["gamma"]]
-        temp_expected = [max(x, eps) for x in temp_expected]
-        temp_result = np.random.dirichlet(temp_expected).tolist()
-        self.beta_transition = dict(zip(list(self.states) + [None], temp_result))
-
-    def resample_beta_emission(self, eps=1e-6):
+    def resample_beta_emission(self, eps=1e-12):
         """
         Resample the beta values used to calculate the emission probabilties.
         :param eps: Minimum value for expected value before resampling.
         :return: None.
         """
-        # given by number of emissions
-        temp_expected = [
-            sum(self.n_emission[s][e] for s in self.states)
-            + self.parameters["gamma_emission"] / self.n
-            for e in self.emissions
-        ]
-        # make sure no degenerate zeros (some emissions can be unseen permanently)
-        temp_expected = [max(x, eps) for x in temp_expected]
-        temp_result = np.random.dirichlet(temp_expected).tolist()
-        self.beta_emission = dict(zip(self.emissions, temp_result))
+        # resample from Dirichlet posterior
+        params = self._get_beta_emission_metaparameters()
+        temp_result = np.random.dirichlet(list(params.values())).tolist()
+        beta_emission = dict(zip(list(params.keys()), temp_result))
+        self.beta_emission = shrink_probabilities(beta_emission, eps)
 
-    def resample_p_initial(self, eps=1e-6):
+    def calculate_beta_emission_loglikelihood(self):
+        # get Dirichlet hyperparameters
+        params = self._get_beta_emission_metaparameters()
+        ll_emission = np.log(
+            stats.dirichlet.pdf(
+                [self.beta_emission[e] for e in self.emissions],
+                [params[e] for e in self.emissions],
+            )
+        )
+        return ll_emission
+
+    def _get_p_initial_metaparameters(self):
+        params = {
+            s: self.n_initial[s]
+            + self.hyperparameters["alpha"] * self.beta_transition[s]
+            for s in self.states
+        }
+        params[None] = self.hyperparameters["alpha"] * self.beta_transition[None]
+        return params
+
+    def resample_p_initial(self, eps=1e-12):
         """
         Resample the starting probabilities. Performed as a sample from the posterior
         distribution, which is a Dirichlet with pseudocounts and actual counts combined.
         :param eps: minimum expected value.
         :return: None.
         """
-        # given by hierarchical beta value plus observed starts
-        temp_expected = [
-            self.n_initial[s2] + self.parameters["alpha"] * self.beta_transition[s2]
-            for s2 in self.states
-        ]
-        temp_expected.append(self.parameters["alpha"] * self.beta_transition[None])
-        temp_expected = [max((x, eps)) for x in temp_expected]
-        temp_result = np.random.dirichlet(temp_expected).tolist()
-        self.p_initial = {s: p for s, p in zip(list(self.states) + [None], temp_result)}
+        params = self._get_p_initial_metaparameters()
+        temp_result = np.random.dirichlet(list(params.values())).tolist()
+        p_initial = dict(zip(list(params.keys()), temp_result))
+        self.p_initial = shrink_probabilities(p_initial, eps)
 
-    def resample_p_transition(self, eps=1e-6):
+    def calculate_p_initial_loglikelihood(self):
+        params = self._get_p_initial_metaparameters()
+        ll_initial = np.log(
+            stats.dirichlet.pdf(
+                [self.p_initial[s] for s in params.keys()],
+                [params[s] for s in params.keys()],
+            )
+        )
+        return ll_initial
+
+    def _get_p_transition_metaparameters(self, state):
+        if self.sticky:
+            params = {
+                s2: self.n_transition[state][s2]
+                + self.hyperparameters["alpha"]
+                * (1 - self.hyperparameters["kappa"])
+                * self.beta_transition[s2]
+                for s2 in self.states
+            }
+            params[None] = (
+                self.hyperparameters["alpha"]
+                * (1 - self.hyperparameters["kappa"])
+                * self.beta_transition[None]
+            )
+            params[state] += (
+                self.hyperparameters["alpha"] * self.hyperparameters["kappa"]
+            )
+        else:
+            params = {
+                s2: self.n_transition[state][s2]
+                + self.hyperparameters["alpha"] * self.beta_transition[s2]
+                for s2 in self.states
+            }
+            params[None] = self.hyperparameters["alpha"] * self.beta_transition[None]
+
+        return params
+
+    def resample_p_transition(self, eps=1e-12):
         """
         Resample the transition probabilities from the current beta values and kappa
         value, if the chain is sticky.
         :param eps: minimum expected value passed to Dirichlet sampling step
         :return: None
         """
-        # given by hierarchical beta value plus observed transitions
-        for s1 in self.states:
-            if self.sticky:
-                temp_expected = [
-                    self.n_transition[s1][s2]
-                    + self.parameters["alpha"]
-                    * (1 - self.parameters["kappa"])
-                    * self.beta_transition[s2]
-                    + (
-                        self.parameters["alpha"] * self.parameters["kappa"]
-                        if s1 == s2
-                        else 0
-                    )
-                    for s2 in self.states
-                ]
-                temp_expected.append(
-                    self.parameters["alpha"]
-                    * (1 - self.parameters["kappa"])
-                    * self.beta_transition[None]
-                )
-            else:
-                temp_expected = [
-                    self.n_transition[s1][s2]
-                    + self.parameters["alpha"] * self.beta_transition[s2]
-                    for s2 in self.states
-                ]
-                temp_expected.append(
-                    self.parameters["alpha"] * self.beta_transition[None]
-                )
-            temp_expected = [max(x, eps) for x in temp_expected]
-            temp_result = np.random.dirichlet(temp_expected).tolist()
-            self.p_transition[s1] = {
-                s2: p for s2, p in zip(list(self.states) + [None], temp_result)
-            }
+        # empty current transition values
+        self.p_transition = {}
+
+        # refresh each state in turn
+        for state in self.states:
+            params = self._get_p_transition_metaparameters(state)
+            temp_result = np.random.dirichlet(list(params.values())).tolist()
+            p_transition_state = dict(zip(list(params.keys()), temp_result))
+            self.p_transition[state] = shrink_probabilities(p_transition_state, eps)
 
         # add transition probabilities from unseen states
         # note: no stickiness update because these are aggregated states
-        temp_expected = [
-            self.parameters["alpha"] * b for b in self.beta_transition.values()
-        ]
-        temp_expected = [max((x, eps)) for x in temp_expected]
-        temp_result = np.random.dirichlet(temp_expected).tolist()
-        self.p_transition[None] = {
-            s2: p for s2, p in zip(list(self.states) + [None], temp_result)
+        params = {
+            k: self.hyperparameters["alpha"] * v
+            for k, v in self.beta_transition.items()
         }
+        temp_result = np.random.dirichlet(list(params.values())).tolist()
+        p_transition_none = dict(zip(list(params.keys()), temp_result))
+        self.p_transition[None] = shrink_probabilities(p_transition_none, eps)
 
-    def resample_p_emission(self, eps=1e-6):
+    def calculate_p_transition_loglikelihood(self):
+        """
+        Note: this calculates the likelihood over all entries in the transition matrix.
+        If chains have been resampled (this is the case during MCMC sampling, for
+        example), then there may be entries in the transition matrix that no longer
+        correspond to actual states.
+        :return:
+        """
+        ll_transition = 0
+        states = self.p_transition.keys()
+
+        # get probability for each state
+        for state in states:
+            params = self._get_p_transition_metaparameters(state)
+            ll_transition += np.log(
+                stats.dirichlet.pdf(
+                    [self.p_transition[state][s] for s in states],
+                    [params[s] for s in states],
+                )
+            )
+
+        # get probability for aggregate state
+        params = {
+            k: self.hyperparameters["alpha"] * v
+            for k, v in self.beta_transition.items()
+        }
+        ll_transition += np.log(
+            stats.dirichlet.pdf(
+                [self.p_transition[None][s] for s in states],
+                [params[s] for s in states],
+            )
+        )
+
+        return ll_transition
+
+    def _get_p_emission_metaparameters(self, state):
+        params = {
+            e: self.n_emission[state][e]
+            + self.hyperparameters["alpha_emission"] * self.beta_emission[e]
+            for e in self.emissions
+        }
+        return params
+
+    def resample_p_emission(self, eps=1e-12):
         """
         resample emission parameters from emission priors and counts.
         :param eps: minimum expected value passed to Dirichlet distribution
         :return: None
         """
-        # find parameters
-        for s in self.states:
-            temp_expected = [
-                self.n_emission[s][e]
-                + self.parameters["alpha_emission"] * self.beta_emission[e]
-                for e in self.emissions
-            ]
-            temp_expected = [max((x, eps)) for x in temp_expected]
-            temp_result = np.random.dirichlet(temp_expected).tolist()
-            # update stored transition probability
-            self.p_emission[s] = {e: p for e, p in zip(self.emissions, temp_result)}
+        # find hyperparameters
+        for state in self.states:
+            params = self._get_p_emission_metaparameters(state)
+            temp_result = np.random.dirichlet(list(params.values())).tolist()
+            p_emission_state = dict(zip(list(params.keys()), temp_result))
+            self.p_emission[state] = shrink_probabilities(p_emission_state, eps)
 
         # add emission probabilities from unseen states
-        temp_expected = [
-            self.parameters["alpha_emission"] * b for b in self.beta_emission.values()
-        ]
-        temp_expected = [max((x, eps)) for x in temp_expected]
-        temp_result = np.random.dirichlet(temp_expected).tolist()
-        self.p_emission[None] = {e: p for e, p in zip(self.emissions, temp_result)}
+        params = {
+            k: self.hyperparameters["alpha_emission"] * v
+            for k, v in self.beta_emission.items()
+        }
+        temp_result = np.random.dirichlet(list(params.values())).tolist()
+        p_emission_none = dict(zip(list(params.keys()), temp_result))
+        self.p_emission[None] = shrink_probabilities(p_emission_none, eps)
+
+    def calculate_p_emission_loglikelihood(self):
+        ll_emission = 0
+
+        # get probability for each state
+        for state in self.states:
+            params = self._get_p_emission_metaparameters(state)
+            ll_emission += np.log(
+                stats.dirichlet.pdf(
+                    [self.p_emission[state][e] for e in self.emissions],
+                    [params[e] for e in self.emissions],
+                )
+            )
+
+        # get probability for aggregate state
+        params = {
+            k: self.hyperparameters["alpha_emission"] * v
+            for k, v in self.beta_emission.items()
+        }
+        ll_emission += np.log(
+            stats.dirichlet.pdf(
+                [self.p_emission[None][e] for e in self.emissions],
+                [params[e] for e in self.emissions],
+            )
+        )
+
+        return ll_emission
 
     def print_fit_parameters(self):
         """
@@ -834,7 +984,7 @@ class HDPHMM(object):
         #
         return None
 
-    def neglogp_chains(self):
+    def calculate_chain_loglikelihood(self):
         """
         Calculate the negative log likelihood of the chain, given its current
         latent states. This is calculated based on the observed emission sequences only,
@@ -846,52 +996,7 @@ class HDPHMM(object):
             for chain in self.chains
         )
 
-    def neglogp_beta_transition(self):
-        """
-        Calculate the negative log likelihood of the current beta_emission and
-        beta_transition values, given the current hyperparameter values.
-        :return:
-        """
-        aggregate_auxiliary_variables = [
-            sum(self.auxiliary_transition_variables[s1][s2] for s1 in self.states)
-            for s2 in self.states
-        ]
-        p_transition = np.log(
-            stats.dirichlet.pdf(
-                [self.beta_transition[s] for s in list(self.states) + [None]],
-                aggregate_auxiliary_variables + [self.parameters["gamma"]],
-            )
-        )
-        return -p_transition
-
-    def neglogp_beta_emission(self):
-        """
-        Calculate the negative log likelihood of the current beta_emission and
-        beta_transition values, given the current hyperparameter values.
-        :return:
-        """
-        temp_expected = [
-            sum(self.n_emission[s][e] for s in self.states)
-            + self.parameters["gamma_emission"] / self.n
-            for e in self.emissions
-        ]
-        p_transition = np.log(
-            stats.dirichlet.pdf(
-                [self.beta_emission[e] for e in self.emissions], temp_expected
-            )
-        )
-        return -p_transition
-
-    def neglogp_parameters(self):
-        """
-        Calculate the negative log likelihood of the actual HDPHMM parameters (the
-        initial, transition and emission probabilities).
-        :return:
-        """
-        warnings.warn("Not implemented")
-        return 0
-
-    def neglogp(self):
+    def calculate_loglikelihood(self):
         """
         Negative log-likelihood of the entire HDPHMM object. Combines the likelihoods of
         the transition and emission beta parameters, and of the chains themselves.
@@ -899,10 +1004,12 @@ class HDPHMM(object):
         :return: non-negative float
         """
         return (
-            self.neglogp_beta_transition()
-            + self.neglogp_beta_emission()
-            + self.neglogp_parameters()
-            + self.neglogp_chains()
+            self.calculate_beta_transition_loglikelihood()
+            + self.calculate_beta_emission_loglikelihood()
+            + self.calculate_p_initial_loglikelihood()
+            + self.calculate_p_transition_loglikelihood()
+            + self.calculate_p_emission_loglikelihood()
+            + self.calculate_chain_loglikelihood()
         )
 
     def resample_chains(self, ncores=1):
@@ -943,7 +1050,7 @@ class HDPHMM(object):
         # update chains using results
         # TODO: parameter check if we should be using alpha or gamma as parameter
         state_generator = dirichlet_process_generator(
-            self.parameters["gamma"], output_generator=self.state_generator()
+            self.hyperparameters["gamma"], output_generator=self.state_generator()
         )
         for chain in self.chains:
             chain.latent_sequence = [
@@ -982,26 +1089,22 @@ class HDPHMM(object):
                 continue
 
             # get current negative log likelihood
-            neglogp_current = (
-                self.neglogp_beta_transition() + self.neglogp_beta_emission()
-            )
+            likelihood_curr = self.calculate_loglikelihood()
 
             # log-likelihood under new parameter value
-            param_current = self.parameters[param_name]
-            self.parameters[param_name] = self.priors[param_name]()
-            neglogp_proposed = (
-                self.neglogp_beta_transition() + self.neglogp_beta_emission()
-            )
+            param_current = self.hyperparameters[param_name]
+            self.hyperparameters[param_name] = self.priors[param_name]()
+            likelihood_proposed = self.calculate_loglikelihood()
 
             # find Metropolis Hasting acceptance probability
-            p_accept = min(1, np.exp(-neglogp_proposed + neglogp_current))
+            p_accept = min(1, np.exp(likelihood_proposed - likelihood_curr))
 
             # choose whether to accept
             alpha_accepted = bool(np.random.binomial(n=1, p=p_accept))
 
             # if we do not accept, revert to the previous value
             if not alpha_accepted:
-                self.parameters[param_name] = param_current
+                self.hyperparameters[param_name] = param_current
 
     def mcmc(self, n=1000, burn_in=500, save_every=10, ncores=1, verbose=True):
         """
@@ -1017,20 +1120,18 @@ class HDPHMM(object):
         be printed.
         :return: A dict containing results from every saved iteration. Includes:
           + the number of states of the HDPHMM
-          + the negative log likelihood of the emissions
-          + the negative log likelihood of the beta parameters
+          + the negative log likelihood of the entire model
+          + the negative log likelihood of the chains only
           + the hyperparameters of the HDPHMM
           + the emission beta values
           + the transition beta values
           + all probability dictionary objects
         """
-        # store parameters in a single dict
+        # store hyperparameters in a single dict
         results = {
             "state_count": list(),
-            "neglogp": list(),
-            "neglogp_chain": list(),
-            "neglogp_beta_transition": list(),
-            "neglogp_beta_emission": list(),
+            "loglikelihood": list(),
+            "chain_loglikelihood": list(),
             "hyperparameters": list(),
             "beta_emission": list(),
             "beta_transition": list(),
@@ -1042,13 +1143,17 @@ class HDPHMM(object):
             states_prev = copy.copy(self.states)
 
             # work down hierarchy when resampling
+            self.update_states()
+            self.resample_hyperparameters()
             self.resample_beta_transition(ncores=ncores)
             self.resample_beta_emission()
             self.resample_p_initial()
             self.resample_p_transition()
             self.resample_p_emission()
-            self.resample_hyperparameters()
             self.resample_chains(ncores=ncores)
+
+            # update computation-heavy statistics
+            likelihood_curr = self.calculate_loglikelihood()
 
             # print iteration summary if required
             if verbose:
@@ -1058,7 +1163,7 @@ class HDPHMM(object):
                 states_added = self.states - states_prev
                 msg = [
                     "Iter: {}".format(i),
-                    "Likelihood: {0:.1f}".format(self.neglogp_chains()),
+                    "Likelihood: {0:.1f}".format(likelihood_curr),
                     "states: {}".format(len(self.states)),
                 ]
                 if len(states_added) > 0:
@@ -1069,20 +1174,18 @@ class HDPHMM(object):
 
             # store results
             if i >= burn_in and i % save_every == 0:
-                # get parameters as nested lists
+                # get hyperparameters as nested lists
                 p_initial = copy.deepcopy(self.p_initial)
                 p_emission = copy.deepcopy(self.p_emission)
                 p_transition = copy.deepcopy(self.p_transition)
 
                 # save new data
                 results["state_count"].append(self.k)
-                results["neglogp"].append(self.neglogp())
-                results["neglogp_chain"].append(self.neglogp_chains())
-                results["neglogp_beta_transition"].append(
-                    self.neglogp_beta_transition()
+                results["loglikelihood"].append(likelihood_curr)
+                results["chain_loglikelihood"].append(
+                    self.calculate_chain_loglikelihood()
                 )
-                results["neglogp_beta_emission"].append(self.neglogp_beta_emission())
-                results["hyperparameters"].append(copy.deepcopy(self.parameters))
+                results["hyperparameters"].append(copy.deepcopy(self.hyperparameters))
                 results["beta_emission"].append(self.beta_emission)
                 results["beta_transition"].append(self.beta_transition)
                 results["parameters"].append(

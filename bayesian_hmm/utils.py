@@ -52,3 +52,13 @@ def dirichlet_process_generator(alpha=1, output_generator=None):
             weights[val] += 1
         count += 1
         yield val
+
+
+# used to ensure all hyperparameters have non-zero values
+def max_dict(d, eps=1e-8):
+    return {k: max(float(v), eps) for k, v in d.items()}
+
+
+def shrink_probabilities(d, eps=1e-12):
+    denom = sum(d.values()) + len(d) * eps
+    return {k: (float(v) + eps) / denom for k, v in d.items()}
