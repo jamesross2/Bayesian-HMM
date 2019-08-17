@@ -90,7 +90,7 @@ class Chain(object):
         # update observations
         self._initialised_flag = True
 
-    def neglogp_sequence(self, p_initial, p_emission, p_transition):
+    def neglogp_chain(self, p_initial, p_emission, p_transition):
         """
         Negative log likelihood of the Chain, using the given parameters.
         Usually called with parameters given by the parent HDPHMM object.

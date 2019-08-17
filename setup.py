@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="bayesian_hmm",
-    version="0.0.2",
+    version="0.0.3",
     license="MIT",
     packages=setuptools.find_packages(exclude=["tests"]),
     author="James Ross",

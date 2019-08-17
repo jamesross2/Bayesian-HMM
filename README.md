@@ -1,6 +1,6 @@
 # Bayesian Hidden Markov Models
 
-[![Build Status](https://travis-ci.org/jamesross2/Bayesian-HMM.svg?branch=master)](https://travis-ci.org/jamesross2/Bayesian-HMM)
+[![Build Status](https://img.shields.io/travis/jamesross2/Bayesian-HMM?logo=travis&style=flat-square)](https://travis-ci.org/jamesross2/Bayesian-HMM?style=flat-square)
 
 This code implements a non-parametric Bayesian Hidden Markov model,
 sometimes referred to as a Hierarchical Dirichlet Process Hidden Markov
@@ -53,12 +53,77 @@ sequences = [base_sequence * 20 for _ in range(50)]
 hmm = bayesian_hmm.HDPHMM(sequences, sticky=False)
 hmm.initialise(k=20)
 
-# estimate parameters, making use of multithreading functionality
-results = hmm.mcmc(n=500, burn_in=100)
+results = hmm.mcmc(n=500, burn_in=100, ncores=3, save_every=10, verbose=True)
+```
 
+This model typically converges to 10 latent states, a sensible posterior. In some cases,
+it converges to 11 latent states, in which a starting state which outputs '0' with high
+confidence is separate to another latent start which outputs '0' with high confidence.
+We can inspect this using the printed output, or with probability matrices printed 
+directly.
+
+```python
 # print final probability estimates (expect 10 latent states)
 hmm.print_probabilities()
 ```
+
+This final command prints the transition and emission probabiltiies of the model after
+MCMC using the [`terminaltables`](https://pypi.org/project/terminaltables/) package. The 
+code below visualises the results using [`pandas`](https://pypi.org/project/pandas/)
+and [`seaborn`](https://pypi.org/project/seaborn/). For simplicity, we will stick with
+the returned MAP estimate, but a more complete analysis might use a more sophisticated
+approach.
+
+```python
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# plot the number of states as a histogram
+sns.countplot(results['state_count'])
+plt.show()
+
+# plot the starting probabilities of the sampled MAP estimate
+map_index = results['chain_loglikelihood'].index(min(results['chain_loglikelihood']))
+parameters_map = results['parameters'][map_index]
+sns.barplot(
+    x=list(parameters_map['p_initial'].keys()), 
+    y=list(parameters_map['p_initial'].values())
+)
+plt.show()
+
+# convert list of hyperparameters into a DataFrame
+hyperparam_posterior_df = (
+    pd.DataFrame(results['hyperparameters'])
+    .reset_index()
+    .melt(id_vars=['index'])
+    .rename(columns={'index': 'iteration'})
+)
+hyperparam_prior_df = pd.concat(
+    pd.DataFrame(
+        {'iteration': range(500), 'variable': k, 'value': [v() for _ in range(500)]}
+    )
+    for k, v in hmm.priors.items()
+)
+hyperparam_df = pd.concat(
+    (hyperparam_prior_df, hyperparam_posterior_df), 
+    keys=['prior', 'posterior'], 
+    names=('type','index')
+)
+hyperparam_df.reset_index(inplace=True)
+
+# advanced: plot sampled prior & sampled posterior together
+g = sns.FacetGrid(
+    hyperparam_df[hyperparam_df['variable'] != 'kappa'],
+    col='variable', 
+    col_wrap=3, 
+    sharex=False,
+    hue='type'
+)
+g.map(sns.distplot, 'value')
+g.add_legend()
+plt.show()
+```  
 
 The `bayesian_hmm` package can handle more advanced usage, including:
   * Multiple emission sequences,
@@ -66,6 +131,7 @@ The `bayesian_hmm` package can handle more advanced usage, including:
   * Any categorical emission distribution,
   * Multithreaded MCMC estimation, and
   * Starting probability estimation, which share a dirichlet prior with the transition probabilities.
+
 
 
 ## Inference
