@@ -54,7 +54,14 @@ class HDPHMM(object):
     sticky-HDPHMM, since we allow a biased self-transition probability.
     """
 
-    def __init__(self, emission_sequences, emissions=None, sticky=True, priors=None):
+    def __init__(
+        self,
+        emission_sequences: List[List[Union[str, Numeric]]],
+        emissions=None,  # type: ignore
+        # emissions: Optional[Iterable[Union[str, int]]] = None # ???
+        sticky: bool = True,
+        priors: Dict[str, Callable[[], Any]] = None,
+    ):
         """
         Create a Hierarchical Dirichlet Process Hidden Markov Model object, which can
         (optionally) be sticky. The emission sequences must be provided, although all
@@ -128,29 +135,39 @@ class HDPHMM(object):
         self.hyperparameters = {param: prior() for param, prior in self.priors.items()}
 
         # use internal properties to store fit hyperparameters
+        self.n_initial: InitDict
+        self.n_emission: NestedInitDict
+        self.n_transition: NestedInitDict
         self.n_initial = {None: 0}
         self.n_emission = {None: {None: 0}}
         self.n_transition = {None: {None: 0}}
 
         # use internal properties to store current state for probabilities
+        self.p_initial: InitDict
+        self.p_emission: NestedInitDict
+        self.p_transition: NestedInitDict
         self.p_initial = {None: 1}
         self.p_emission = {None: {None: 1}}
         self.p_transition = {None: {None: 1}}
 
         # store derived hyperparameters
+        self.auxiliary_transition_variables: NestedInitDict
+        self.beta_transition: InitDict
+        self.beta_emission: InitDict
         self.auxiliary_transition_variables = {None: {None: 0}}
         self.beta_transition = {None: 1}
         self.beta_emission = {None: 1}
 
         # states & emissions
+        # TODO: figure out emissions's type...
         if emissions is None:
-            emissions = functools.reduce(
+            emissions = functools.reduce(  # type: ignore
                 set.union, (set(c.emission_sequence) for c in self.chains), set()
             )
-        elif type(emissions) is not set:
+        elif not isinstance(emissions, set):
             raise ValueError("emissions must be a set")
-        self.emissions = emissions
-        self.states = set()
+        self.emissions = emissions  # type: ignore
+        self.states: Set[str] = set()
 
         # generate non-repeating character labels for latent states
         self._label_generator = label_generator(string.ascii_lowercase)
