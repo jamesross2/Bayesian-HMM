@@ -176,7 +176,7 @@ class HDPHMM(object):
         self._initialised = False
 
     @property
-    def initialised(self):
+    def initialised(self) -> bool:
         """
         Test whether a HDPHMM is initialised.
         :return: bool
@@ -193,7 +193,7 @@ class HDPHMM(object):
             raise ValueError("initialised flag must be Boolean")
 
     @property
-    def c(self):
+    def c(self) -> int:
         """
         Number of chains in the HMM.
         :return: int
@@ -201,7 +201,7 @@ class HDPHMM(object):
         return len(self.chains)
 
     @property
-    def k(self):
+    def k(self) -> int:
         """
         Number of latent states in the HMM currently.
         :return: int
@@ -209,7 +209,7 @@ class HDPHMM(object):
         return len(self.states)
 
     @property
-    def n(self):
+    def n(self) -> int:
         """
         Number of unique emissions. If `emissions` was specified when the HDPHMM was
         created, then this counts the number of elements in `emissions`. Otherwise,
@@ -218,7 +218,7 @@ class HDPHMM(object):
         """
         return len(self.emissions)
 
-    def tabulate(self):
+    def tabulate(self) -> np.array:
         """
         Convert the latent and emission sequences for all chains into a single numpy
         array. Array contains an index which matches a Chain's index in
@@ -238,10 +238,10 @@ class HDPHMM(object):
         )
         return hmm_array
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<bayesian_hmm.HDPHMM, size {C}>".format(C=self.c)
 
-    def __str__(self, print_len=15):
+    def __str__(self, print_len: int = 15) -> str:
         fs = (
             "bayesian_hmm.HDPHMM,"
             + " ({C} chains, {K} states, {N} emissions, {Ob} observations)"
