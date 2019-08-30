@@ -106,7 +106,12 @@ class Chain(object):
         # update observations
         self._initialised_flag = True
 
-    def neglogp_chain(self, p_initial, p_emission, p_transition):
+    def neglogp_chain(
+        self,
+        p_initial: Dict[Optional[str], Numeric],
+        p_emission: Dict[Any, Dict[Any, Numeric]],
+        p_transition: Dict[Any, Dict[Any, Numeric]],
+    ) -> float:
         """
         Negative log likelihood of the Chain, using the given parameters.
         Usually called with parameters given by the parent HDPHMM object.
@@ -121,7 +126,7 @@ class Chain(object):
 
         # get probability of transition & of emission, at start and remaining time steps
         # np.prod([])==1, so this is safe
-        p_initial = np.log(p_initial[self.latent_sequence[0]]) + np.log(
+        p_start = np.log(p_initial[self.latent_sequence[0]]) + np.log(
             p_emission[self.latent_sequence[0]][self.emission_sequence[0]]
         )
         p_remainder = [
@@ -131,7 +136,7 @@ class Chain(object):
         ]
 
         # take log and sum for result
-        return -(p_initial + sum(p_remainder))
+        return -(p_start + sum(p_remainder))
 
     @staticmethod
     def resample_latent_sequence(
