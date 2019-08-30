@@ -140,8 +140,12 @@ class Chain(object):
 
     @staticmethod
     def resample_latent_sequence(
-        sequences, states, p_initial, p_emission, p_transition
-    ):
+        sequences: Tuple[List[str], List[str]],
+        states: Set[str],
+        p_initial: Dict[Optional[str], Numeric],
+        p_emission: Dict[Optional[str], Dict[Optional[str], Numeric]],
+        p_transition: Dict[Optional[str], Dict[Optional[str], Numeric]],
+    ) -> List[str]:
         """
         Resample the latent sequence of a Chain. This is usually called by another
         method or class, rather than directly. It is included to allow for
@@ -170,8 +174,9 @@ class Chain(object):
         auxiliary_vars = [np.random.uniform(0, p) for p in temp_p_transition]
 
         # initialise historical P(s_t | u_{1:t}, y_{1:t}) and latent sequence
-        p_history = [None] * seqlen
-        latent_sequence = [None] * seqlen
+        p_history: List[Dict[str, Numeric]]
+        p_history = [dict()] * seqlen
+        latent_sequence = [str()] * seqlen
 
         # compute probability of state t (currently the starting state t==0)
         p_history[0] = {
