@@ -4,11 +4,27 @@ The Chain object stores a single emission series.
 It has methods to initialise the object, resample the latent states, and some convenient
 printing methods.
 """
+# Support typehinting.
+from __future__ import annotations
+from typing import (
+    Collection,
+    Sequence,
+    Dict,
+    Any,
+    Union,
+    List,
+    Tuple,
+    Set,
+    Optional,
+    Sized,
+)
 
 import numpy as np
 import random
 import copy
 
+# Shorthand for a numeric type.
+Numeric = Union[int, float]
 
 # Chain stores a single markov emission sequence plus associated latent variables
 class Chain(object):
@@ -16,7 +32,7 @@ class Chain(object):
     Store observed emission sequence and current latent sequence for a HMM.
     """
 
-    def __init__(self, sequence):
+    def __init__(self, sequence: List[Numeric]) -> None:
         """
         Create a Hidden Markov Chain for an observed emission sequence.
         :param sequence: iterable containing observed emissions.
@@ -31,11 +47,11 @@ class Chain(object):
         # keep flag to track initialisation
         self._initialised_flag = False
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.T
 
     @property
-    def initialised_flag(self):
+    def initialised_flag(self) -> bool:
         """
         Test whether a Chain is initialised.
         :return: bool
@@ -43,7 +59,7 @@ class Chain(object):
         return self._initialised_flag
 
     @initialised_flag.setter
-    def initialised_flag(self, value):
+    def initialised_flag(self, value: bool) -> None:
         if value is True:
             raise RuntimeError(
                 "Chain must be initialised through initialise_chain method"
@@ -53,10 +69,10 @@ class Chain(object):
         else:
             raise ValueError("initialised flag must be Boolean")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<bayesian_hmm.Chain, size {0}>".format(self.T)
 
-    def __str__(self, print_len=15):
+    def __str__(self, print_len: int = 15) -> str:
         print_len = min(print_len - 1, self.T - 1)
         return "bayesian_hmm.Chain, size={T}, seq={s}".format(
             T=self.T,
@@ -67,7 +83,7 @@ class Chain(object):
             + ["..."],
         )
 
-    def tabulate(self):
+    def tabulate(self) -> np.array:
         """
         Convert the latent and emission sequences into a single numpy array.
         :return: numpy array with shape (l, 2), where l is the length of the Chain
@@ -77,7 +93,7 @@ class Chain(object):
         )
 
     # introduce randomly sampled states for all latent variables in Chain
-    def initialise(self, states):
+    def initialise(self, states: Sequence) -> None:
         """
         Initialise the chain by sampling latent states.
         Typically called directly from an HDPHMM object.
