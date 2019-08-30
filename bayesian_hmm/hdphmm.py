@@ -20,6 +20,10 @@ posterior distribution for the above probabilities. In addition, we can use MAP
 estimation (for example) to fix latent states, and facilitate further analysis of a
 Chain.
 """
+# Support typehinting.
+from __future__ import annotations
+from typing import Any, Union, Optional, Set, Dict, Iterable, List, Callable, Generator
+
 import numpy as np
 import random
 import copy
@@ -33,6 +37,15 @@ from sympy.functions.combinatorial.numbers import stirling
 from .chain import Chain
 from .utils import label_generator, dirichlet_process_generator, shrink_probabilities
 from warnings import catch_warnings
+
+# Shorthand for numeric types.
+Numeric = Union[int, float]
+
+# Oft-used dictionary initializations with shorthands.
+DictOptionalStrNum = Dict[Optional[str], Optional[Numeric]]
+InitDict = DictOptionalStrNum
+DictOptionalStrDictOptionalStrNum = Dict[Optional[str], Optional[DictOptionalStrNum]]
+NestedInitDict = DictOptionalStrDictOptionalStrNum
 
 
 class HDPHMM(object):
