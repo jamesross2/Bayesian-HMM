@@ -32,7 +32,7 @@ class Chain(object):
     Store observed emission sequence and current latent sequence for a HMM.
     """
 
-    def __init__(self, sequence: List[Numeric]) -> None:
+    def __init__(self, sequence: List[Union[str, Numeric]]) -> None:
         """
         Create a Hidden Markov Chain for an observed emission sequence.
         :param sequence: iterable containing observed emissions.
