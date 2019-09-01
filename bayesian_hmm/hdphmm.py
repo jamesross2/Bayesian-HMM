@@ -167,7 +167,7 @@ class HDPHMM(object):
         elif not isinstance(emissions, set):
             raise ValueError("emissions must be a set")
         self.emissions = emissions  # type: ignore
-        self.states: Set[str] = set()
+        self.states: Set[Optional[str]] = set()
 
         # generate non-repeating character labels for latent states
         self._label_generator = label_generator(string.ascii_lowercase)
