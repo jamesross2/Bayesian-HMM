@@ -42,10 +42,10 @@ from warnings import catch_warnings
 Numeric = Union[int, float]
 
 # Oft-used dictionary initializations with shorthands.
-DictOptionalStrNum = Dict[Optional[str], Optional[Numeric]]
-InitDict = DictOptionalStrNum
-DictOptionalStrDictOptionalStrNum = Dict[Optional[str], Optional[DictOptionalStrNum]]
-NestedInitDict = DictOptionalStrDictOptionalStrNum
+DictStrNum = Dict[Optional[str], Numeric]
+InitDict = DictStrNum
+DictStrDictStrNum = Dict[Optional[str], DictStrNum]
+NestedInitDict = DictStrDictStrNum
 
 
 class HDPHMM(object):
