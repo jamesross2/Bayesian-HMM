@@ -5,7 +5,7 @@ user.
 """
 # Support typehinting.
 from __future__ import annotations
-from typing import Union, Generator, Iterator, Dict
+from typing import Union, Generator, Iterator, Dict, Optional
 
 import numpy as np
 import random
@@ -68,7 +68,7 @@ def max_dict(d: Dict[str, Numeric], eps: Numeric = 1e-8) -> Dict[str, Numeric]:
 
 
 def shrink_probabilities(
-    d: Dict[str, Numeric], eps: Numeric = 1e-12
-) -> Dict[str, Numeric]:
+    d: Dict[Optional[str], Numeric], eps: Numeric = 1e-12
+) -> Dict[Optional[str], Numeric]:
     denom = sum(d.values()) + len(d) * eps
     return {k: (float(v) + eps) / denom for k, v in d.items()}
