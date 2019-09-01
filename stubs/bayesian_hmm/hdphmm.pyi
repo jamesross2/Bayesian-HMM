@@ -5,7 +5,7 @@
 import numpy as np
 from .chain import Chain
 from .utils import dirichlet_process_generator, label_generator, shrink_probabilities
-from typing import Any, Callable, Dict, Generator, List, Optional, Union
+from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Union
 
 Numeric = Union[int, float]
 DictStrNum = Dict[Optional[str], Numeric]
@@ -29,7 +29,7 @@ class HDPHMM:
     beta_emission: Any
     emissions: Any = ...
     states: Any = ...
-    def __init__(self, emission_sequences: List[List[Union[str, Numeric]]], emissions: Any=..., sticky: bool=..., priors: Dict[str, Callable[[], Any]]=...) -> Any: ...
+    def __init__(self, emission_sequences: Iterable[List[Optional[str]]], emissions: Any=..., sticky: bool=..., priors: Dict[str, Callable[[], Any]]=...) -> None: ...
     @property
     def initialised(self) -> bool: ...
     @initialised.setter
