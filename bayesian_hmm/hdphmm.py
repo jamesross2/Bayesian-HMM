@@ -56,12 +56,12 @@ class HDPHMM(object):
 
     def __init__(
         self,
-        emission_sequences: List[List[Union[str, Numeric]]],
+        emission_sequences: Iterable[List[Optional[str]]],
         emissions=None,  # type: ignore
         # emissions: Optional[Iterable[Union[str, int]]] = None # ???
         sticky: bool = True,
         priors: Dict[str, Callable[[], Any]] = None,
-    ):
+    ) -> None:
         """
         Create a Hierarchical Dirichlet Process Hidden Markov Model object, which can
         (optionally) be sticky. The emission sequences must be provided, although all
