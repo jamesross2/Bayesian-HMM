@@ -265,7 +265,8 @@ class HDPHMM(object):
             # state irrelevant for constant count (all zeros)
             self.n_initial[label] = 0
             self.n_transition[label] = {s: 0 for s in self.states.union({label, None})}
-            [self.n_transition[s].update({label: 0}) for s in self.states]
+            for s in self.states:
+                self.n_transition[s].update({label: 0})
             self.n_emission[label] = {e: 0 for e in self.emissions}
 
             # update auxiliary transition variables
@@ -340,7 +341,8 @@ class HDPHMM(object):
         self.hyperparameters = {param: prior() for param, prior in self.priors.items()}
 
         # initialise chains
-        [c.initialise(states) for c in self.chains]
+        for c in self.chains:
+            c.initialise(states)
 
         # initialise hierarchical priors
         temp_beta = sorted(
