@@ -17,6 +17,7 @@ from typing import (
     Set,
     Optional,
     Sized,
+    Iterable
 )
 
 import numpy as np
@@ -38,14 +39,14 @@ class Chain(object):
     Store observed emission sequence and current latent sequence for a HMM.
     """
 
-    def __init__(self, sequence: List[Union[str, Numeric]]) -> None:
+    def __init__(self, sequence: List[Optional[str]]) -> None:
         """
         Create a Hidden Markov Chain for an observed emission sequence.
         :param sequence: iterable containing observed emissions.
         """
         # initialise & store sequences
-        self.emission_sequence = copy.deepcopy(sequence)
-        self.latent_sequence = [None for _ in sequence]
+        self.emission_sequence: List[Optional[str]] = copy.deepcopy(sequence)
+        self.latent_sequence: List[Optional[str]] = [None for _ in sequence]
 
         # calculate dependent hyperparameters
         self.T = len(self.emission_sequence)
