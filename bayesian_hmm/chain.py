@@ -23,8 +23,14 @@ import numpy as np
 import random
 import copy
 
-# Shorthand for a numeric type.
+# Shorthand for numeric types.
 Numeric = Union[int, float]
+
+# Oft-used dictionary initializations with shorthands.
+DictStrNum = Dict[Optional[str], Numeric]
+InitDict = DictStrNum
+DictStrDictStrNum = Dict[Optional[str], DictStrNum]
+NestedInitDict = DictStrDictStrNum
 
 # Chain stores a single markov emission sequence plus associated latent variables
 class Chain(object):
@@ -108,10 +114,10 @@ class Chain(object):
 
     def neglogp_chain(
         self,
-        p_initial: Dict[Optional[str], Numeric],
-        p_emission: Dict[Any, Dict[Any, Numeric]],
-        p_transition: Dict[Any, Dict[Any, Numeric]],
-    ) -> float:
+        p_initial: InitDict,
+        p_emission: NestedInitDict,
+        p_transition: NestedInitDict,
+    ) -> Numeric:
         """
         Negative log likelihood of the Chain, using the given parameters.
         Usually called with parameters given by the parent HDPHMM object.
@@ -142,9 +148,9 @@ class Chain(object):
     def resample_latent_sequence(
         sequences: Tuple[List[str], List[str]],
         states: Set[str],
-        p_initial: Dict[Optional[str], Numeric],
-        p_emission: Dict[Optional[str], Dict[Optional[str], Numeric]],
-        p_transition: Dict[Optional[str], Dict[Optional[str], Numeric]],
+        p_initial: InitDict,
+        p_emission: NestedInitDict,
+        p_transition: NestedInitDict,
     ) -> List[str]:
         """
         Resample the latent sequence of a Chain. This is usually called by another
