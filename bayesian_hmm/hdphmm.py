@@ -184,7 +184,7 @@ class HDPHMM(object):
         return self._initialised
 
     @initialised.setter
-    def initialised(self, value):
+    def initialised(self, value: Any) -> None:
         if value:
             raise AssertionError("HDPHMM must be initialised through initialise method")
         elif not value:
@@ -248,7 +248,7 @@ class HDPHMM(object):
         )
         return fs.format(C=self.c, K=self.k, N=self.n, Ob=sum(c.T for c in self.chains))
 
-    def state_generator(self, eps=1e-12):
+    def state_generator(self, eps: Numeric = 1e-12) -> Generator[str, None, None]:
         """
         Create a new state for the HDPHMM, and update all parameters accordingly.
         This involves updating
@@ -317,10 +317,9 @@ class HDPHMM(object):
             # save label
             self.states = self.states.union({label})
 
-            #
             yield label
 
-    def initialise(self, k=20):
+    def initialise(self, k: int = 20) -> None:
         """
         Initialise the HDPHMM. This involves:
           + Choosing starting values for all hyperparameters
