@@ -11,5 +11,5 @@ from .chain import Chain
 import warnings
 
 warnings.warn(
-    "bayesian_hmm is in beta testing, may change at any time, and has no guarantee of accuracy"
+    "bayesian_hmm is in beta testing and future versions may behave differently"
 )

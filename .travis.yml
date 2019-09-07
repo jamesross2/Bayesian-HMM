@@ -1,6 +1,6 @@
 language: python
 python:
-  - "3.6"
+  - "3.7"
 
 # install dependencies
 install:
@@ -11,3 +11,7 @@ install:
 script:
   - pytest --cov=bayesian_hmm tests/
   - black --check ./bayesian_hmm ./tests -v
+
+# send report to code coverage service
+after_success:
+    - codecov
