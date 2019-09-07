@@ -17,7 +17,7 @@ from typing import (
     Set,
     Optional,
     Sized,
-    Iterable
+    Iterable,
 )
 
 import numpy as np
@@ -32,6 +32,7 @@ DictStrNum = Dict[Optional[str], Numeric]
 InitDict = DictStrNum
 DictStrDictStrNum = Dict[Optional[str], DictStrNum]
 NestedInitDict = DictStrDictStrNum
+
 
 # Chain stores a single markov emission sequence plus associated latent variables
 class Chain(object):
