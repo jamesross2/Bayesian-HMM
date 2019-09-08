@@ -3,15 +3,21 @@
 Helper functions for the Bayesian-HMM package. Should not be called directly by the
 user.
 """
+# Support typehinting.
+from __future__ import annotations
+from typing import Union, Generator, Iterator, Dict, Optional
 
 import numpy as np
 import random
 import itertools
 import string
 
+# Shorthand for a numeric type.
+Numeric = Union[int, float]
+
 
 # used to give human-friendly labels to states as they are created
-def label_generator(labels=string.ascii_lowercase):
+def label_generator(labels: str = string.ascii_lowercase) -> Generator[str, None, None]:
     """
     :param labels: set of labels to choose from. Should not be numeric.
     :return: a generator which  yields unique labels of the form
@@ -29,7 +35,9 @@ def label_generator(labels=string.ascii_lowercase):
 
 
 # used to choose from new states after resampling latent states
-def dirichlet_process_generator(alpha=1, output_generator=None):
+def dirichlet_process_generator(
+    alpha: Numeric = 1, output_generator: Iterator[Union[str, int]] = None
+) -> Generator[Union[str, int], None, None]:
     """
     Returns a generator object which yields subsequent draws from a single dirichlet
     process.
@@ -55,10 +63,12 @@ def dirichlet_process_generator(alpha=1, output_generator=None):
 
 
 # used to ensure all hyperparameters have non-zero values
-def max_dict(d, eps=1e-8):
+def max_dict(d: Dict[str, Numeric], eps: Numeric = 1e-8) -> Dict[str, Numeric]:
     return {k: max(float(v), eps) for k, v in d.items()}
 
 
-def shrink_probabilities(d, eps=1e-12):
+def shrink_probabilities(
+    d: Dict[Optional[str], Numeric], eps: Numeric = 1e-12
+) -> Dict[Optional[str], Numeric]:
     denom = sum(d.values()) + len(d) * eps
     return {k: (float(v) + eps) / denom for k, v in d.items()}

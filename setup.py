@@ -18,5 +18,5 @@ setuptools.setup(
     ],
     install_requires=["scipy", "numpy", "terminaltables", "tqdm", "sympy"],
     test_suite="py.test",
-    tests_require=["pytest", "black"],
+    tests_require=["pytest", "pytest-cov", "black", "codecov"],
 )
