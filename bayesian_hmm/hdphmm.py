@@ -20,6 +20,10 @@ posterior distribution for the above probabilities. In addition, we can use MAP
 estimation (for example) to fix latent states, and facilitate further analysis of a
 Chain.
 """
+# Support typehinting.
+from __future__ import annotations
+from typing import Any, Union, Optional, Set, Dict, Iterable, List, Callable, Generator
+
 import numpy as np
 import random
 import copy
@@ -34,6 +38,15 @@ from .chain import Chain
 from .utils import label_generator, dirichlet_process_generator, shrink_probabilities
 from warnings import catch_warnings
 
+# Shorthand for numeric types.
+Numeric = Union[int, float]
+
+# Oft-used dictionary initializations with shorthands.
+DictStrNum = Dict[Optional[str], Numeric]
+InitDict = DictStrNum
+DictStrDictStrNum = Dict[Optional[str], DictStrNum]
+NestedInitDict = DictStrDictStrNum
+
 
 class HDPHMM(object):
     """
@@ -41,7 +54,14 @@ class HDPHMM(object):
     sticky-HDPHMM, since we allow a biased self-transition probability.
     """
 
-    def __init__(self, emission_sequences, emissions=None, sticky=True, priors=None):
+    def __init__(
+        self,
+        emission_sequences: Iterable[List[Optional[str]]],
+        emissions=None,  # type: ignore
+        # emissions: Optional[Iterable[Union[str, int]]] = None # ???
+        sticky: bool = True,
+        priors: Dict[str, Callable[[], Any]] = None,
+    ) -> None:
         """
         Create a Hierarchical Dirichlet Process Hidden Markov Model object, which can
         (optionally) be sticky. The emission sequences must be provided, although all
@@ -115,29 +135,39 @@ class HDPHMM(object):
         self.hyperparameters = {param: prior() for param, prior in self.priors.items()}
 
         # use internal properties to store fit hyperparameters
+        self.n_initial: InitDict
+        self.n_emission: NestedInitDict
+        self.n_transition: NestedInitDict
         self.n_initial = {None: 0}
         self.n_emission = {None: {None: 0}}
         self.n_transition = {None: {None: 0}}
 
         # use internal properties to store current state for probabilities
+        self.p_initial: InitDict
+        self.p_emission: NestedInitDict
+        self.p_transition: NestedInitDict
         self.p_initial = {None: 1}
         self.p_emission = {None: {None: 1}}
         self.p_transition = {None: {None: 1}}
 
         # store derived hyperparameters
+        self.auxiliary_transition_variables: NestedInitDict
+        self.beta_transition: InitDict
+        self.beta_emission: InitDict
         self.auxiliary_transition_variables = {None: {None: 0}}
         self.beta_transition = {None: 1}
         self.beta_emission = {None: 1}
 
         # states & emissions
+        # TODO: figure out emissions's type...
         if emissions is None:
-            emissions = functools.reduce(
+            emissions = functools.reduce(  # type: ignore
                 set.union, (set(c.emission_sequence) for c in self.chains), set()
             )
-        elif type(emissions) is not set:
+        elif not isinstance(emissions, set):
             raise ValueError("emissions must be a set")
-        self.emissions = emissions
-        self.states = set()
+        self.emissions = emissions  # type: ignore
+        self.states: Set[Optional[str]] = set()
 
         # generate non-repeating character labels for latent states
         self._label_generator = label_generator(string.ascii_lowercase)
@@ -146,7 +176,7 @@ class HDPHMM(object):
         self._initialised = False
 
     @property
-    def initialised(self):
+    def initialised(self) -> bool:
         """
         Test whether a HDPHMM is initialised.
         :return: bool
@@ -154,7 +184,7 @@ class HDPHMM(object):
         return self._initialised
 
     @initialised.setter
-    def initialised(self, value):
+    def initialised(self, value: Any) -> None:
         if value:
             raise AssertionError("HDPHMM must be initialised through initialise method")
         elif not value:
@@ -163,7 +193,7 @@ class HDPHMM(object):
             raise ValueError("initialised flag must be Boolean")
 
     @property
-    def c(self):
+    def c(self) -> int:
         """
         Number of chains in the HMM.
         :return: int
@@ -171,7 +201,7 @@ class HDPHMM(object):
         return len(self.chains)
 
     @property
-    def k(self):
+    def k(self) -> int:
         """
         Number of latent states in the HMM currently.
         :return: int
@@ -179,7 +209,7 @@ class HDPHMM(object):
         return len(self.states)
 
     @property
-    def n(self):
+    def n(self) -> int:
         """
         Number of unique emissions. If `emissions` was specified when the HDPHMM was
         created, then this counts the number of elements in `emissions`. Otherwise,
@@ -188,7 +218,7 @@ class HDPHMM(object):
         """
         return len(self.emissions)
 
-    def tabulate(self):
+    def tabulate(self) -> np.array:
         """
         Convert the latent and emission sequences for all chains into a single numpy
         array. Array contains an index which matches a Chain's index in
@@ -208,17 +238,17 @@ class HDPHMM(object):
         )
         return hmm_array
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<bayesian_hmm.HDPHMM, size {C}>".format(C=self.c)
 
-    def __str__(self, print_len=15):
+    def __str__(self, print_len: int = 15) -> str:
         fs = (
             "bayesian_hmm.HDPHMM,"
             + " ({C} chains, {K} states, {N} emissions, {Ob} observations)"
         )
         return fs.format(C=self.c, K=self.k, N=self.n, Ob=sum(c.T for c in self.chains))
 
-    def state_generator(self, eps=1e-12):
+    def state_generator(self, eps: Numeric = 1e-12) -> Generator[str, None, None]:
         """
         Create a new state for the HDPHMM, and update all parameters accordingly.
         This involves updating
@@ -235,7 +265,8 @@ class HDPHMM(object):
             # state irrelevant for constant count (all zeros)
             self.n_initial[label] = 0
             self.n_transition[label] = {s: 0 for s in self.states.union({label, None})}
-            [self.n_transition[s].update({label: 0}) for s in self.states]
+            for s in self.states:
+                self.n_transition[s].update({label: 0})
             self.n_emission[label] = {e: 0 for e in self.emissions}
 
             # update auxiliary transition variables
@@ -287,10 +318,9 @@ class HDPHMM(object):
             # save label
             self.states = self.states.union({label})
 
-            #
             yield label
 
-    def initialise(self, k=20):
+    def initialise(self, k: int = 20) -> None:
         """
         Initialise the HDPHMM. This involves:
           + Choosing starting values for all hyperparameters
@@ -311,7 +341,8 @@ class HDPHMM(object):
         self.hyperparameters = {param: prior() for param, prior in self.priors.items()}
 
         # initialise chains
-        [c.initialise(states) for c in self.chains]
+        for c in self.chains:
+            c.initialise(states)
 
         # initialise hierarchical priors
         temp_beta = sorted(

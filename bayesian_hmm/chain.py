@@ -4,10 +4,34 @@ The Chain object stores a single emission series.
 It has methods to initialise the object, resample the latent states, and some convenient
 printing methods.
 """
+# Support typehinting.
+from __future__ import annotations
+from typing import (
+    Collection,
+    Sequence,
+    Dict,
+    Any,
+    Union,
+    List,
+    Tuple,
+    Set,
+    Optional,
+    Sized,
+    Iterable,
+)
 
 import numpy as np
 import random
 import copy
+
+# Shorthand for numeric types.
+Numeric = Union[int, float]
+
+# Oft-used dictionary initializations with shorthands.
+DictStrNum = Dict[Optional[str], Numeric]
+InitDict = DictStrNum
+DictStrDictStrNum = Dict[Optional[str], DictStrNum]
+NestedInitDict = DictStrDictStrNum
 
 
 # Chain stores a single markov emission sequence plus associated latent variables
@@ -16,14 +40,14 @@ class Chain(object):
     Store observed emission sequence and current latent sequence for a HMM.
     """
 
-    def __init__(self, sequence):
+    def __init__(self, sequence: List[Optional[str]]) -> None:
         """
         Create a Hidden Markov Chain for an observed emission sequence.
         :param sequence: iterable containing observed emissions.
         """
         # initialise & store sequences
-        self.emission_sequence = copy.deepcopy(sequence)
-        self.latent_sequence = [None for _ in sequence]
+        self.emission_sequence: List[Optional[str]] = copy.deepcopy(sequence)
+        self.latent_sequence: List[Optional[str]] = [None for _ in sequence]
 
         # calculate dependent hyperparameters
         self.T = len(self.emission_sequence)
@@ -31,11 +55,11 @@ class Chain(object):
         # keep flag to track initialisation
         self._initialised_flag = False
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.T
 
     @property
-    def initialised_flag(self):
+    def initialised_flag(self) -> bool:
         """
         Test whether a Chain is initialised.
         :return: bool
@@ -43,7 +67,7 @@ class Chain(object):
         return self._initialised_flag
 
     @initialised_flag.setter
-    def initialised_flag(self, value):
+    def initialised_flag(self, value: bool) -> None:
         if value is True:
             raise RuntimeError(
                 "Chain must be initialised through initialise_chain method"
@@ -53,10 +77,10 @@ class Chain(object):
         else:
             raise ValueError("initialised flag must be Boolean")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<bayesian_hmm.Chain, size {0}>".format(self.T)
 
-    def __str__(self, print_len=15):
+    def __str__(self, print_len: int = 15) -> str:
         print_len = min(print_len - 1, self.T - 1)
         return "bayesian_hmm.Chain, size={T}, seq={s}".format(
             T=self.T,
@@ -67,7 +91,7 @@ class Chain(object):
             + ["..."],
         )
 
-    def tabulate(self):
+    def tabulate(self) -> np.array:
         """
         Convert the latent and emission sequences into a single numpy array.
         :return: numpy array with shape (l, 2), where l is the length of the Chain
@@ -77,7 +101,7 @@ class Chain(object):
         )
 
     # introduce randomly sampled states for all latent variables in Chain
-    def initialise(self, states):
+    def initialise(self, states: Sequence) -> None:
         """
         Initialise the chain by sampling latent states.
         Typically called directly from an HDPHMM object.
@@ -90,7 +114,12 @@ class Chain(object):
         # update observations
         self._initialised_flag = True
 
-    def neglogp_chain(self, p_initial, p_emission, p_transition):
+    def neglogp_chain(
+        self,
+        p_initial: InitDict,
+        p_emission: NestedInitDict,
+        p_transition: NestedInitDict,
+    ) -> Numeric:
         """
         Negative log likelihood of the Chain, using the given parameters.
         Usually called with parameters given by the parent HDPHMM object.
@@ -105,7 +134,7 @@ class Chain(object):
 
         # get probability of transition & of emission, at start and remaining time steps
         # np.prod([])==1, so this is safe
-        p_initial = np.log(p_initial[self.latent_sequence[0]]) + np.log(
+        p_start = np.log(p_initial[self.latent_sequence[0]]) + np.log(
             p_emission[self.latent_sequence[0]][self.emission_sequence[0]]
         )
         p_remainder = [
@@ -115,12 +144,16 @@ class Chain(object):
         ]
 
         # take log and sum for result
-        return -(p_initial + sum(p_remainder))
+        return -(p_start + sum(p_remainder))
 
     @staticmethod
     def resample_latent_sequence(
-        sequences, states, p_initial, p_emission, p_transition
-    ):
+        sequences: Tuple[List[str], List[str]],
+        states: Set[str],
+        p_initial: InitDict,
+        p_emission: NestedInitDict,
+        p_transition: NestedInitDict,
+    ) -> List[str]:
         """
         Resample the latent sequence of a Chain. This is usually called by another
         method or class, rather than directly. It is included to allow for
@@ -149,8 +182,9 @@ class Chain(object):
         auxiliary_vars = [np.random.uniform(0, p) for p in temp_p_transition]
 
         # initialise historical P(s_t | u_{1:t}, y_{1:t}) and latent sequence
-        p_history = [None] * seqlen
-        latent_sequence = [None] * seqlen
+        p_history: List[Dict[str, Numeric]]
+        p_history = [dict()] * seqlen
+        latent_sequence = [str()] * seqlen
 
         # compute probability of state t (currently the starting state t==0)
         p_history[0] = {
