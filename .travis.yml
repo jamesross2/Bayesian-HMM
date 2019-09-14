@@ -9,7 +9,7 @@ install:
 
 # run tests
 script:
-  - pytest --cov=bayesian_hmm tests/
+  - pytest --cov-report=xml --cov=bayesian_hmm tests/
   - black --check ./bayesian_hmm ./tests -v
 
 # send report to code coverage service
