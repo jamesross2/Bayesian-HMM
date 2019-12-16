@@ -6,7 +6,7 @@ user.
 # Support typehinting.
 from __future__ import annotations
 from typing import Union, Generator, Iterator, Dict, Optional
-
+import bayesian_hmm
 import numpy as np
 import random
 import itertools
@@ -63,12 +63,14 @@ def dirichlet_process_generator(
 
 
 # used to ensure all hyperparameters have non-zero values
-def max_dict(d: Dict[str, Numeric], eps: Numeric = 1e-8) -> Dict[str, Numeric]:
+def max_dict(
+    d: Dict[str, Numeric], eps: Numeric = 1e-8
+) -> Dict[bayesian_hmm.Symbol, Numeric]:
     return {k: max(float(v), eps) for k, v in d.items()}
 
 
 def shrink_probabilities(
-    d: Dict[Optional[str], Numeric], eps: Numeric = 1e-12
-) -> Dict[Optional[str], Numeric]:
+    d: Dict[bayesian_hmm.Symbol, Numeric], eps: Numeric = 1e-12
+) -> Dict[bayesian_hmm.Symbol, Numeric]:
     denom = sum(d.values()) + len(d) * eps
     return {k: (float(v) + eps) / denom for k, v in d.items()}

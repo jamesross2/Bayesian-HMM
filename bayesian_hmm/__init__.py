@@ -8,6 +8,7 @@ advance.
 
 from .hdphmm import HDPHMM
 from .chain import Chain
+from .symbol import Symbol, EmptySymbol
 import warnings
 
 warnings.warn(

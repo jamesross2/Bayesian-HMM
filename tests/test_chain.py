@@ -1,4 +1,5 @@
 import bayesian_hmm
+import bayesian_hmm.chain
 
 
 def test_empty_chain():
@@ -8,7 +9,7 @@ def test_empty_chain():
 
 def test_print():
     # checks that printing does not cause an error
-    emissions = ["e" + str(x) for x in range(1000)]
+    emissions = [bayesian_hmm.symbol.Symbol("e" + str(x)) for x in range(1000)]
     chain = bayesian_hmm.Chain(emissions)
     print(chain)
     repr(chain)
@@ -16,8 +17,8 @@ def test_print():
 
 
 def test_initialise_chain():
-    emissions = ["e0", "e1", "e2", "e3"]
-    states = ["s0", "s1", "s2", "s3", "s4"]  # intentionally different length
+    emissions = [bayesian_hmm.symbol.Symbol(val) for val in ("e0", "e1", "e2", "e3")]
+    states = {bayesian_hmm.symbol.Symbol(val) for val in ("s0", "s1", "s2", "s3", "s4")}  # intentionally different length
     chain = bayesian_hmm.Chain(emissions)
 
     # check chain initialised correctly
@@ -41,8 +42,8 @@ def test_chain_resample_transition():
     # specify starting emission sequence
     len_init = 10
     len_total = 50
-    emissions = ["e" + str(x % len_init) for x in range(len_total)]
-    states = ["s" + str(x) for x in range(8)]
+    emissions = [bayesian_hmm.symbol.Symbol("e" + str(x % len_init)) for x in range(len_total)]
+    states = [bayesian_hmm.symbol.Symbol("s" + str(x)) for x in range(8)]
 
     # specify deterministic latent probabilities
     p_initial = {s: 1 if s == states[-1] else 0 for s in states}
@@ -58,13 +59,13 @@ def test_chain_resample_transition():
 
     # initialise chain with single emission state
     chain = bayesian_hmm.Chain(emissions)
-    chain.initialise([states[0]])
+    chain.initialise({states[0]})
     assert all(s == states[0] for s in chain.latent_sequence)
 
     # resample latent series
-    chain.latent_sequence = chain.resample_latent_sequence(
+    chain.latent_sequence = bayesian_hmm.chain.resample_latent_sequence(
         (chain.emission_sequence, chain.latent_sequence),
-        states,
+        set(states),
         p_initial,
         p_emission,
         p_transition,
@@ -83,8 +84,8 @@ def test_chain_resample_emission():
     """
     # specify starting emission sequence
     len_init = 7
-    emissions = ["e" + str(x) for x in range(len_init)]
-    states = ["s" + str(x) for x in range(2 * len_init)]
+    emissions = [bayesian_hmm.symbol.Symbol("e" + str(x)) for x in range(len_init)]
+    states = [bayesian_hmm.symbol.Symbol("s" + str(x)) for x in range(2 * len_init)]
 
     # specify deterministic latent probabilities
     p_initial = {s: 1 / len(states) for s in states}
@@ -102,13 +103,13 @@ def test_chain_resample_emission():
 
     # initialise chain with single emission state
     chain = bayesian_hmm.Chain(emission_sequence)
-    chain.initialise(states)
+    chain.initialise(set(states))
     assert all(s in states for s in chain.latent_sequence)
 
     # resample latent series
-    chain.latent_sequence = chain.resample_latent_sequence(
+    chain.latent_sequence = bayesian_hmm.chain.resample_latent_sequence(
         (chain.emission_sequence, chain.latent_sequence),
-        states,
+        set(states),
         p_initial,
         p_emission,
         p_transition,

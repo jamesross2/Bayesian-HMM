@@ -6,7 +6,7 @@ latent states at every time point, along with a probability structure that ties 
 states to emissions. This structure involves
 
   + A starting probability, which dictates the probability that the first state
-  in a latent seqeuence is equal to a given symbol. This has a hierarchical Dirichlet
+  in a latent sequence is equal to a given symbol. This has a hierarchical Dirichlet
   prior.
   + A transition probability, which dictates the probability that any given symbol in
   the latent sequence is followed by another given symbol. This shares the same
@@ -22,8 +22,7 @@ Chain.
 """
 # Support typehinting.
 from __future__ import annotations
-from typing import Any, Union, Optional, Set, Dict, Iterable, List, Callable, Generator
-
+import typing
 import numpy as np
 import random
 import copy
@@ -32,20 +31,19 @@ import tqdm
 import functools
 import multiprocessing
 import string
+import bayesian_hmm
 from scipy import special, stats
 from sympy.functions.combinatorial.numbers import stirling
-from .chain import Chain
+from .chain import Chain, resample_latent_sequence
 from .utils import label_generator, dirichlet_process_generator, shrink_probabilities
 from warnings import catch_warnings
 
 # Shorthand for numeric types.
-Numeric = Union[int, float]
+Numeric = typing.Union[int, float]
 
 # Oft-used dictionary initializations with shorthands.
-DictStrNum = Dict[Optional[str], Numeric]
-InitDict = DictStrNum
-DictStrDictStrNum = Dict[Optional[str], DictStrNum]
-NestedInitDict = DictStrDictStrNum
+InitDict = typing.Dict[bayesian_hmm.symbol.Symbol, Numeric]
+NestedInitDict = typing.Dict[bayesian_hmm.symbol.Symbol, InitDict]
 
 
 class HDPHMM(object):
@@ -56,11 +54,11 @@ class HDPHMM(object):
 
     def __init__(
         self,
-        emission_sequences: Iterable[List[Optional[str]]],
-        emissions=None,  # type: ignore
+        emission_sequences: typing.Iterable[typing.List[bayesian_hmm.symbol.Symbol]],
+        emissions: typing.Any = None,  # flexible types,
         # emissions: Optional[Iterable[Union[str, int]]] = None # ???
         sticky: bool = True,
-        priors: Dict[str, Callable[[], Any]] = None,
+        priors: typing.Dict[str, typing.Callable[[], typing.Any]] = None,
     ) -> None:
         """
         Create a Hierarchical Dirichlet Process Hidden Markov Model object, which can
@@ -103,7 +101,7 @@ class HDPHMM(object):
           + kappa: prior distribution of the kappa parameter for the
             self-transition probability. Ignored if `sticky==False`. Kappa prior should
             have support in (0, 1) only. Higher values of kappa mean the chain is more
-            likely to explore states with high self-transition probabilty.
+            likely to explore states with high self-transition probability.
         """
         # store chains
         self.chains = [Chain(sequence) for sequence in emission_sequences]
@@ -138,25 +136,33 @@ class HDPHMM(object):
         self.n_initial: InitDict
         self.n_emission: NestedInitDict
         self.n_transition: NestedInitDict
-        self.n_initial = {None: 0}
-        self.n_emission = {None: {None: 0}}
-        self.n_transition = {None: {None: 0}}
+        self.n_initial = {bayesian_hmm.EmptySymbol(): 0}
+        self.n_emission = {bayesian_hmm.EmptySymbol(): {bayesian_hmm.EmptySymbol(): 0}}
+        self.n_transition = {
+            bayesian_hmm.EmptySymbol(): {bayesian_hmm.EmptySymbol(): 0}
+        }
 
         # use internal properties to store current state for probabilities
         self.p_initial: InitDict
         self.p_emission: NestedInitDict
         self.p_transition: NestedInitDict
-        self.p_initial = {None: 1}
-        self.p_emission = {None: {None: 1}}
-        self.p_transition = {None: {None: 1}}
+        self.p_initial = {bayesian_hmm.EmptySymbol(): 1.0}
+        self.p_emission = {
+            bayesian_hmm.EmptySymbol(): {bayesian_hmm.EmptySymbol(): 1.0}
+        }
+        self.p_transition = {
+            bayesian_hmm.EmptySymbol(): {bayesian_hmm.EmptySymbol(): 1.0}
+        }
 
         # store derived hyperparameters
         self.auxiliary_transition_variables: NestedInitDict
         self.beta_transition: InitDict
         self.beta_emission: InitDict
-        self.auxiliary_transition_variables = {None: {None: 0}}
-        self.beta_transition = {None: 1}
-        self.beta_emission = {None: 1}
+        self.auxiliary_transition_variables = {
+            bayesian_hmm.EmptySymbol(): {bayesian_hmm.EmptySymbol(): 0.0}
+        }
+        self.beta_transition = {bayesian_hmm.EmptySymbol(): 1.0}
+        self.beta_emission = {bayesian_hmm.EmptySymbol(): 1.0}
 
         # states & emissions
         # TODO: figure out emissions's type...
@@ -167,7 +173,7 @@ class HDPHMM(object):
         elif not isinstance(emissions, set):
             raise ValueError("emissions must be a set")
         self.emissions = emissions  # type: ignore
-        self.states: Set[Optional[str]] = set()
+        self.states: typing.Set[bayesian_hmm.Symbol] = set()
 
         # generate non-repeating character labels for latent states
         self._label_generator = label_generator(string.ascii_lowercase)
@@ -184,7 +190,7 @@ class HDPHMM(object):
         return self._initialised
 
     @initialised.setter
-    def initialised(self, value: Any) -> None:
+    def initialised(self, value: typing.Any) -> None:
         if value:
             raise AssertionError("HDPHMM must be initialised through initialise method")
         elif not value:
@@ -248,7 +254,9 @@ class HDPHMM(object):
         )
         return fs.format(C=self.c, K=self.k, N=self.n, Ob=sum(c.T for c in self.chains))
 
-    def state_generator(self, eps: Numeric = 1e-12) -> Generator[str, None, None]:
+    def state_generator(
+        self, eps: Numeric = 1e-12
+    ) -> typing.Generator[str, None, None]:
         """
         Create a new state for the HDPHMM, and update all parameters accordingly.
         This involves updating
@@ -260,49 +268,70 @@ class HDPHMM(object):
         """
         while True:
             label = next(self._label_generator)
+            state = bayesian_hmm.Symbol(label)
 
             # update counts with zeros (assume _n_update called later)
             # state irrelevant for constant count (all zeros)
-            self.n_initial[label] = 0
-            self.n_transition[label] = {s: 0 for s in self.states.union({label, None})}
+            self.n_initial[state] = 0
+            self.n_transition[state] = {
+                s: 0 for s in self.states.union({state, bayesian_hmm.EmptySymbol()})
+            }
             for s in self.states:
-                self.n_transition[s].update({label: 0})
-            self.n_emission[label] = {e: 0 for e in self.emissions}
+                self.n_transition[s].update({state: 0})
+            self.n_emission[state] = {e: 0 for e in self.emissions}
 
             # update auxiliary transition variables
-            self.auxiliary_transition_variables[label] = {
-                s2: 1 for s2 in list(self.states) + [label, None]
+            self.auxiliary_transition_variables[state] = {
+                s2: 1.0
+                for s2 in list(self.states) + [state, bayesian_hmm.EmptySymbol()]
             }
             for s1 in self.states:
-                self.auxiliary_transition_variables[s1][label] = 1
+                self.auxiliary_transition_variables[s1][state] = 1.0
 
             # update beta_transition value and split out from current pseudo state
-            temp_beta = np.random.beta(1, self.hyperparameters["gamma"])
-            self.beta_transition[label] = temp_beta * self.beta_transition[None]
-            self.beta_transition[None] = (1 - temp_beta) * self.beta_transition[None]
+            temp_beta = np.random.beta(1.0, self.hyperparameters["gamma"])
+            self.beta_transition[state] = (
+                temp_beta * self.beta_transition[bayesian_hmm.EmptySymbol()]
+            )
+            self.beta_transition[bayesian_hmm.EmptySymbol()] = (
+                1.0 - temp_beta
+            ) * self.beta_transition[bayesian_hmm.EmptySymbol()]
 
             # update starting probability
-            temp_p_initial = np.random.beta(1, self.hyperparameters["gamma"])
-            self.p_initial[label] = temp_p_initial * self.p_initial[None]
-            self.p_initial[None] = (1 - temp_p_initial) * self.p_initial[None]
+            temp_p_initial = np.random.beta(1.0, self.hyperparameters["gamma"])
+            self.p_initial[state] = (
+                temp_p_initial * self.p_initial[bayesian_hmm.EmptySymbol()]
+            )
+            self.p_initial[bayesian_hmm.EmptySymbol()] = (
+                1.0 - temp_p_initial
+            ) * self.p_initial[bayesian_hmm.EmptySymbol()]
 
             # update transition from new state
             temp_p_transition = np.random.dirichlet(
-                [self.beta_transition[s] for s in list(self.states) + [label, None]]
+                [
+                    self.beta_transition[s]
+                    for s in list(self.states) + [state, bayesian_hmm.EmptySymbol()]
+                ]
             )
             p_transition_label = dict(
-                zip(list(self.states) + [label, None], temp_p_transition)
+                zip(
+                    list(self.states) + [state, bayesian_hmm.EmptySymbol()],
+                    temp_p_transition,
+                )
             )
-            self.p_transition[label] = shrink_probabilities(p_transition_label, eps)
+            self.p_transition[state] = shrink_probabilities(p_transition_label, eps)
 
             # update transitions into new state
-            for state in self.states.union({None}):
+            for state in self.states.union({bayesian_hmm.EmptySymbol()}):
                 # (note that label not included in self.states)
                 temp_p_transition = np.random.beta(1, self.hyperparameters["gamma"])
-                self.p_transition[state][label] = (
-                    self.p_transition[state][None] * temp_p_transition
+                self.p_transition[state][state] = (
+                    self.p_transition[state][bayesian_hmm.EmptySymbol()]
+                    * temp_p_transition
                 )
-                self.p_transition[state][None] = self.p_transition[state][None] * (
+                self.p_transition[state][
+                    bayesian_hmm.EmptySymbol()
+                ] = self.p_transition[state][bayesian_hmm.EmptySymbol()] * (
                     1 - temp_p_transition
                 )
 
@@ -313,12 +342,12 @@ class HDPHMM(object):
                     for e in self.emissions
                 ]
             )
-            self.p_emission[label] = dict(zip(self.emissions, temp_p_emission))
+            self.p_emission[state] = dict(zip(self.emissions, temp_p_emission))
 
             # save label
-            self.states = self.states.union({label})
+            self.states = self.states.union({state})
 
-            yield label
+            yield state
 
     def initialise(self, k: int = 20) -> None:
         """
@@ -335,14 +364,14 @@ class HDPHMM(object):
         """
         # create as many states as needed
         states = [next(self._label_generator) for _ in range(k)]
-        self.states = set(states)
+        self.states = set(bayesian_hmm.Symbol(state) for state in states)
 
         # set hyperparameters
         self.hyperparameters = {param: prior() for param, prior in self.priors.items()}
 
         # initialise chains
         for c in self.chains:
-            c.initialise(states)
+            c.initialise(self.states)
 
         # initialise hierarchical priors
         temp_beta = sorted(
@@ -351,11 +380,13 @@ class HDPHMM(object):
             ),
             reverse=True,
         )
-        beta_transition = dict(zip(list(self.states) + [None], temp_beta))
+        beta_transition = dict(
+            zip(list(self.states) + [bayesian_hmm.EmptySymbol()], temp_beta)
+        )
         self.beta_transition = shrink_probabilities(beta_transition)
         self.auxiliary_transition_variables = {
-            s1: {s2: 1 for s2 in self.states.union({None})}
-            for s1 in self.states.union({None})
+            s1: {s2: 1 for s2 in self.states.union({bayesian_hmm.EmptySymbol()})}
+            for s1 in self.states.union({bayesian_hmm.EmptySymbol()})
         }
 
         # update counts before resampling
@@ -390,10 +421,14 @@ class HDPHMM(object):
         # merge old probabilities into None
         for state in states_removed:
             # remove entries and add to aggregate None state
-            self.beta_transition[None] += self.beta_transition.pop(state)
-            self.p_initial[None] += self.p_initial.pop(state)
-            for s1 in states_next.union({None}):
-                self.p_transition[s1][None] += self.p_transition[s1].pop(state)
+            self.beta_transition[
+                bayesian_hmm.EmptySymbol()
+            ] += self.beta_transition.pop(state)
+            self.p_initial[bayesian_hmm.EmptySymbol()] += self.p_initial.pop(state)
+            for s1 in states_next.union({bayesian_hmm.EmptySymbol()}):
+                self.p_transition[s1][bayesian_hmm.EmptySymbol()] += self.p_transition[
+                    s1
+                ].pop(state)
 
             # remove transition vector entirely
             del self.p_transition[state]
@@ -415,13 +450,14 @@ class HDPHMM(object):
             )
 
         # transition count for non-oracle transitions
-        n_initial = {s: 0 for s in self.states.union({None})}
+        n_initial = {s: 0 for s in self.states.union({bayesian_hmm.EmptySymbol()})}
         n_emission = {
-            s: {e: 0 for e in self.emissions} for s in self.states.union({None})
+            s: {e: 0 for e in self.emissions}
+            for s in self.states.union({bayesian_hmm.EmptySymbol()})
         }
         n_transition = {
-            s1: {s2: 0 for s2 in self.states.union({None})}
-            for s1 in self.states.union({None})
+            s1: {s2: 0 for s2 in self.states.union({bayesian_hmm.EmptySymbol()})}
+            for s1 in self.states.union({bayesian_hmm.EmptySymbol()})
         }
 
         # increment all relevant hyperparameters while looping over sequence
@@ -657,7 +693,7 @@ class HDPHMM(object):
             s2: sum(self.auxiliary_transition_variables[s1][s2] for s1 in self.states)
             for s2 in self.states
         }
-        params[None] = self.hyperparameters["gamma"]
+        params[bayesian_hmm.EmptySymbol()] = self.hyperparameters["gamma"]
         return params
 
     def resample_beta_transition(
@@ -691,9 +727,11 @@ class HDPHMM(object):
     def calculate_beta_transition_loglikelihood(self):
         # get Dirichlet hyperparameters
         params = self._get_beta_transition_metaparameters()
+        # shrink beta transitions to assure probabilities sum to 1
+        beta_transition = shrink_probabilities({state: self.beta_transition[state] for state in params.keys()})
         ll_transition = np.log(
             stats.dirichlet.pdf(
-                [self.beta_transition[s] for s in params.keys()],
+                [beta_transition[s] for s in params.keys()],
                 [params[s] for s in params.keys()],
             )
         )
@@ -716,7 +754,7 @@ class HDPHMM(object):
 
     def resample_beta_emission(self, eps=1e-12):
         """
-        Resample the beta values used to calculate the emission probabilties.
+        Resample the beta values used to calculate the emission probabilities.
         :param eps: Minimum value for expected value before resampling.
         :return: None.
         """
@@ -743,7 +781,10 @@ class HDPHMM(object):
             + self.hyperparameters["alpha"] * self.beta_transition[s]
             for s in self.states
         }
-        params[None] = self.hyperparameters["alpha"] * self.beta_transition[None]
+        params[bayesian_hmm.EmptySymbol()] = (
+            self.hyperparameters["alpha"]
+            * self.beta_transition[bayesian_hmm.EmptySymbol()]
+        )
         return params
 
     def resample_p_initial(self, eps=1e-12):
@@ -760,9 +801,10 @@ class HDPHMM(object):
 
     def calculate_p_initial_loglikelihood(self):
         params = self._get_p_initial_metaparameters()
+        p_initial = shrink_probabilities({state: self.p_initial[state] for state in params.keys()})
         ll_initial = np.log(
             stats.dirichlet.pdf(
-                [self.p_initial[s] for s in params.keys()],
+                [p_initial[s] for s in params.keys()],
                 [params[s] for s in params.keys()],
             )
         )
@@ -777,10 +819,10 @@ class HDPHMM(object):
                 * self.beta_transition[s2]
                 for s2 in self.states
             }
-            params[None] = (
+            params[bayesian_hmm.EmptySymbol()] = (
                 self.hyperparameters["alpha"]
                 * (1 - self.hyperparameters["kappa"])
-                * self.beta_transition[None]
+                * self.beta_transition[bayesian_hmm.EmptySymbol()]
             )
             params[state] += (
                 self.hyperparameters["alpha"] * self.hyperparameters["kappa"]
@@ -791,7 +833,10 @@ class HDPHMM(object):
                 + self.hyperparameters["alpha"] * self.beta_transition[s2]
                 for s2 in self.states
             }
-            params[None] = self.hyperparameters["alpha"] * self.beta_transition[None]
+            params[bayesian_hmm.EmptySymbol()] = (
+                self.hyperparameters["alpha"]
+                * self.beta_transition[bayesian_hmm.EmptySymbol()]
+            )
 
         return params
 
@@ -820,7 +865,9 @@ class HDPHMM(object):
         }
         temp_result = np.random.dirichlet(list(params.values())).tolist()
         p_transition_none = dict(zip(list(params.keys()), temp_result))
-        self.p_transition[None] = shrink_probabilities(p_transition_none, eps)
+        self.p_transition[bayesian_hmm.EmptySymbol()] = shrink_probabilities(
+            p_transition_none, eps
+        )
 
     def calculate_p_transition_loglikelihood(self):
         """
@@ -836,9 +883,10 @@ class HDPHMM(object):
         # get probability for each state
         for state in states:
             params = self._get_p_transition_metaparameters(state)
+            p_transition = shrink_probabilities({s: self.p_transition[state][s] for s in states})
             ll_transition += np.log(
                 stats.dirichlet.pdf(
-                    [self.p_transition[state][s] for s in states],
+                    [p_transition[s] for s in states],
                     [params[s] for s in states],
                 )
             )
@@ -850,7 +898,7 @@ class HDPHMM(object):
         }
         ll_transition += np.log(
             stats.dirichlet.pdf(
-                [self.p_transition[None][s] for s in states],
+                [self.p_transition[bayesian_hmm.EmptySymbol()][s] for s in states],
                 [params[s] for s in states],
             )
         )
@@ -885,7 +933,9 @@ class HDPHMM(object):
         }
         temp_result = np.random.dirichlet(list(params.values())).tolist()
         p_emission_none = dict(zip(list(params.keys()), temp_result))
-        self.p_emission[None] = shrink_probabilities(p_emission_none, eps)
+        self.p_emission[bayesian_hmm.EmptySymbol()] = shrink_probabilities(
+            p_emission_none, eps
+        )
 
     def calculate_p_emission_loglikelihood(self):
         ll_emission = 0
@@ -907,7 +957,10 @@ class HDPHMM(object):
         }
         ll_emission += np.log(
             stats.dirichlet.pdf(
-                [self.p_emission[None][e] for e in self.emissions],
+                [
+                    self.p_emission[bayesian_hmm.EmptySymbol()][e]
+                    for e in self.emissions
+                ],
                 [params[e] for e in self.emissions],
             )
         )
@@ -1059,8 +1112,8 @@ class HDPHMM(object):
 
         # create temporary function for mapping
         resample_partial = functools.partial(
-            Chain.resample_latent_sequence,
-            states=list(self.states) + [None],
+            resample_latent_sequence,
+            states=list(self.states) + [bayesian_hmm.EmptySymbol()],
             p_initial=copy.deepcopy(p_initial),
             p_emission=copy.deepcopy(p_emission),
             p_transition=copy.deepcopy(p_transition),
@@ -1085,7 +1138,7 @@ class HDPHMM(object):
         )
         for chain in self.chains:
             chain.latent_sequence = [
-                s if s is not None else next(state_generator)
+                s if s.value is not None else next(state_generator)
                 for s in chain.latent_sequence
             ]
 
@@ -1107,7 +1160,7 @@ class HDPHMM(object):
     def resample_hyperparameters(self):
         """
         Resample hyperparameters using a Metropolis Hastings algorithm. Uses a
-        straightforward resampling approach, which (for each hyperparameter) samples a
+        straightforward resampling approach,    which (for each hyperparameter) samples a
         proposed value according to the prior distribution, and accepts the proposed
         value with probability scaled by the relative probabilities of the model under
         the current and proposed model.
@@ -1137,7 +1190,14 @@ class HDPHMM(object):
             if not alpha_accepted:
                 self.hyperparameters[param_name] = param_current
 
-    def mcmc(self, n=1000, burn_in=500, save_every=10, ncores=1, verbose=True):
+    def mcmc(
+        self,
+        n: int = 1000,
+        burn_in: int = 500,
+        save_every: int = 10,
+        ncores: int = 1,
+        verbose=True,
+    ) -> typing.Dict[str, typing.Any]:
         """
         Use Markov chain Monte Carlo to estimate the starting, transition, and emission
         parameters of the HDPHMM, as well as the number of latent states.
@@ -1174,6 +1234,7 @@ class HDPHMM(object):
             states_prev = copy.copy(self.states)
 
             # work down hierarchy when resampling
+            self.resample_chains(ncores=ncores)
             self.update_states()
             self.resample_hyperparameters()
             self.resample_beta_transition(ncores=ncores)
@@ -1181,7 +1242,6 @@ class HDPHMM(object):
             self.resample_p_initial()
             self.resample_p_transition()
             self.resample_p_emission()
-            self.resample_chains(ncores=ncores)
 
             # update computation-heavy statistics
             likelihood_curr = self.calculate_loglikelihood()

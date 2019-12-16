@@ -63,9 +63,9 @@ def test_mcmc():
 
     # parameters is a list of dicts, with each dict a point-in-time snap of parameters
     assert all(type(x) == dict for x in results["parameters"])
-    assert all(type(y) == dict for x in results["parameters"] for y in x.values())
+    assert all(isinstance(y, dict) for x in results["parameters"] for y in x.values())
     assert all(
-        type(y) == str or y is None
+        isinstance(y, bayesian_hmm.Symbol)
         for x in results["parameters"]
         for y in x["p_initial"]
     )

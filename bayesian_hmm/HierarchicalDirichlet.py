@@ -17,6 +17,3 @@ class HierarchicalDirichlet(object):
     def __init__(self) -> None:
         # create object to store counts
         self.n_transition: DictStrDictStrNum
-        
-    
-    
