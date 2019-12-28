@@ -16,14 +16,14 @@ class Symbol(object):
             raise ValueError("Symbols must have hashable (and immutable) values.")
         self.value = value
 
-    def __hash__(self) -> int:
-        return hash(self.value)
-
     def __str__(self) -> str:
         return str(self.value)
 
     def __repr__(self) -> str:
         return "({})".format(self.value)
+
+    def __hash__(self) -> int:
+        return hash(self.value)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Symbol):

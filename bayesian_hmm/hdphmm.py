@@ -42,8 +42,8 @@ from warnings import catch_warnings
 Numeric = typing.Union[int, float]
 
 # Oft-used dictionary initializations with shorthands.
-InitDict = typing.Dict[bayesian_hmm.symbol.Symbol, Numeric]
-NestedInitDict = typing.Dict[bayesian_hmm.symbol.Symbol, InitDict]
+InitDict = typing.Dict[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol, Numeric]
+NestedInitDict = typing.Dict[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol, InitDict]
 
 
 class HDPHMM(object):
@@ -54,7 +54,7 @@ class HDPHMM(object):
 
     def __init__(
         self,
-        emission_sequences: typing.Iterable[typing.List[bayesian_hmm.symbol.Symbol]],
+        emission_sequences: typing.Iterable[typing.List[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol]],
         emissions: typing.Any = None,  # flexible types,
         # emissions: Optional[Iterable[Union[str, int]]] = None # ???
         sticky: bool = True,

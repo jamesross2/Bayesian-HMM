@@ -11,16 +11,16 @@ import typing
 import numpy
 import random
 import copy
-import bayesian_hmm.symbol
+import bayesian_hmm.hierarchical_dirichlet_process.symbol
 
 
 # Shorthand for numeric types.
 Numeric = typing.Union[int, float]
 
 # Oft-used dictionary initializations with shorthands.
-DictStrNum = typing.Dict[bayesian_hmm.symbol.Symbol, Numeric]
+DictStrNum = typing.Dict[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol, Numeric]
 InitDict = DictStrNum
-DictStrDictStrNum = typing.Dict[bayesian_hmm.symbol.Symbol, DictStrNum]
+DictStrDictStrNum = typing.Dict[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol, DictStrNum]
 NestedInitDict = DictStrDictStrNum
 
 
@@ -30,17 +30,17 @@ class Chain(object):
     Store observed emission sequence and current latent sequence for a HMM.
     """
 
-    def __init__(self, sequence: typing.List[bayesian_hmm.symbol.Symbol]) -> None:
+    def __init__(self, sequence: typing.List[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol]) -> None:
         """
         Create a Hidden Markov Chain for an observed emission sequence.
         :param sequence: iterable containing observed emissions.
         """
         # initialise & store sequences
-        self.emission_sequence: typing.List[bayesian_hmm.symbol.Symbol] = copy.deepcopy(
+        self.emission_sequence: typing.List[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol] = copy.deepcopy(
             sequence
         )
-        self.latent_sequence: typing.List[bayesian_hmm.symbol.Symbol] = [
-            bayesian_hmm.symbol.EmptySymbol() for _ in sequence
+        self.latent_sequence: typing.List[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol] = [
+            bayesian_hmm.hierarchical_dirichlet_process.symbol.EmptySymbol() for _ in sequence
         ]
 
         # calculate dependent hyperparameters
@@ -98,7 +98,7 @@ class Chain(object):
         )
 
     # introduce randomly sampled states for all latent variables in Chain
-    def initialise(self, states: typing.Set[bayesian_hmm.symbol.Symbol]) -> None:
+    def initialise(self, states: typing.Set[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol]) -> None:
         """
         Initialise the chain by sampling latent states.
         Typically called directly from an HDPHMM object.
@@ -148,13 +148,14 @@ class Chain(object):
 
 def resample_latent_sequence(
     sequences: typing.Tuple[
-        typing.List[bayesian_hmm.symbol.Symbol], typing.List[bayesian_hmm.symbol.Symbol]
+        typing.List[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol], typing.List[
+            bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol]
     ],
-    states: typing.Set[bayesian_hmm.symbol.Symbol],
+    states: typing.Set[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol],
     p_initial: InitDict,
     p_emission: NestedInitDict,
     p_transition: NestedInitDict,
-) -> typing.List[bayesian_hmm.symbol.Symbol]:
+) -> typing.List[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol]:
     """
     Resample the latent sequence of a Chain. This is usually called by another
     method or class, rather than directly. It is included to allow for
@@ -183,10 +184,10 @@ def resample_latent_sequence(
     auxiliary_vars = [numpy.random.uniform(0, p) for p in temp_p_transition]
 
     # initialise historical P(s_t | u_{1:t}, y_{1:t}) and latent sequence
-    p_history: typing.List[typing.Dict[bayesian_hmm.symbol.Symbol, Numeric]] = [
+    p_history: typing.List[typing.Dict[bayesian_hmm.hierarchical_dirichlet_process.symbol.Symbol, Numeric]] = [
         dict()
     ] * seqlen
-    latent_sequence = [bayesian_hmm.symbol.EmptySymbol()] * seqlen
+    latent_sequence = [bayesian_hmm.hierarchical_dirichlet_process.symbol.EmptySymbol()] * seqlen
 
     # compute probability of state t (currently the starting state t==0)
     p_history[0] = {

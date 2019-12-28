@@ -8,7 +8,8 @@ advance.
 
 from .hdphmm import HDPHMM
 from .chain import Chain
-from .symbol import Symbol, EmptySymbol
+from .hierarchical_dirichlet_process.symbol import Symbol, EmptySymbol
+from bayesian_hmm import hierarchical_dirichlet_process
 import warnings
 
 warnings.warn(
