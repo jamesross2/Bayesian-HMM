@@ -1,242 +1,177 @@
-import bayesian_hmm
-from . import symbol
-from . import variable
 import typing
-import numpy
+
+import scipy.stats
+
+from .. import utils
+from . import hyperparameter, stick_breaking_process, symbol, variable
 
 
-class BayesianDirichletProcess(variable.Variable):
+class DirichletProcess(variable.Variable):
     def __init__(
         self,
-        beta: variable.Variable,
-        gamma: variable.Variable,
-        states: variable.Variable,
-        sticky: bool = False,
-    ):
+        beta: stick_breaking_process.StickBreakingProcess,
+        gamma: hyperparameter.Hyperparameter,
+        kappa: typing.Optional[hyperparameter.Hyperparameter] = None,
+    ) -> None:
+        """The Dirichlet process gives the (infinite) transition probabilities of the hidden Markov model.
+
+        This object is actually a family of Dirichlet processes, which share a common hierarchical prior (given by
+        beta, another Dirichlet process, modelled as a stick breaking process). Since beta can grow in size (in number
+        of states), the Dirichlet processes can grow in size also. This facilitates the infinite size of the
+        hierarchical Dirichlet process.
+
+        Args:
+            beta: The stick breaking process describing the hierarchical priors for each Dirichlet process. States with
+                large associated beta values are more likely to have large transition probabilities.
+            gamma: The hyperparameter associated with each Dirichlet process.
+            kappa: The hyperparameter associated with the stickiness of each Dirichlet process.
+
+        """
         # init parent
-        super(variable.Variable, self).__init__()
+        super(DirichletProcess, self).__init__()
 
         # store parents
-        self.beta: variable.Variable = beta
-        self.gamma: variable.Variable = gamma
-        self.states: variable.Variable = states
-        self.sticky = sticky
+        self.beta: stick_breaking_process.StickBreakingProcess = beta
+        self.gamma: hyperparameter.Hyperparameter = gamma
+        self.kappa: typing.Optional[hyperparameter.Hyperparameter] = kappa
 
-        # fill current value
-        self.value = self.resample()
+        # fill with empty initial value
+        self.value: typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, float]] = {
+            symbol.EmptySymbol(): {symbol.EmptySymbol(): 1}
+        }
+
+    @property
+    def sticky(self) -> bool:
+        """If True, then the DirichletProcess has a kappa variable and favours self-transitions.
+
+        Returns:
+            If True, then the Dirichlet Process is sticky.
+
+        """
+        return self.kappa is not None
+
+    def posterior_parameters(
+        self, states: typing.Set[symbol.Symbol], counts: typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, int]]
+    ) -> typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, float]]:
+        """The parameters of the posterior distribution.
+
+        In order to resample the Dirichlet process from the posterior distribution, we use this method to get parameters
+        for the posterior.
+
+        Args:
+            states: The states for which we wish to calculate parameters.
+            counts: The number of transitions between states. Should include keys for every Symbol in `states`.
+
+        Returns:
+            A nested dictionary containing parameter values.
+
+        """
+        # kappa==0 implies non-sticky Dirichlet process
+        kappa_value = self.kappa.value if self.sticky else 0.0
+
+        # get parameters for posterior distribution
+        # three components: count (posterior element), beta (prior), and kappa (sticky)
+        params = {
+            state0: {
+                state1: counts.get(state0, dict()).get(state1, 0)
+                + self.gamma.value * (1 - kappa_value) * self.beta.value.get(state1)
+                + self.gamma.value * kappa_value * (state0 == state1)
+                for state1 in states
+            }
+            for state0 in states
+        }
+
+        # parameters fully updated
+        return params
 
     def log_likelihood(self) -> float:
-        # TODO
-        return 1
+        """The unconditional log likelihood of the Dirichlet process.
 
-    def resample(self) -> typing.Dict[symbol.Symbol, float]:
-        pass
+        This uses the prior distribution only, and ignores the transition counts.
 
-    def get_parameters(self):
-        if self.sticky:
-            params = {
-                s2: self.n_transition[state][s2]
-                + self.hyperparameters["alpha"]
-                * (1 - self.hyperparameters["kappa"])
-                * self.beta_transition[s2]
-                for s2 in self.states
-            }
-            params[bayesian_hmm.EmptySymbol()] = (
-                self.hyperparameters["alpha"]
-                * (1 - self.hyperparameters["kappa"])
-                * self.beta_transition[bayesian_hmm.EmptySymbol()]
-            )
-            params[state] += (
-                self.hyperparameters["alpha"] * self.hyperparameters["kappa"]
-            )
-        else:
-            params = {
-                s2: self.n_transition[state][s2]
-                + self.hyperparameters["alpha"] * self.beta_transition[s2]
-                for s2 in self.states
-            }
-            params[bayesian_hmm.EmptySymbol()] = (
-                self.hyperparameters["alpha"]
-                * self.beta_transition[bayesian_hmm.EmptySymbol()]
-            )
+        Returns:
+            The log likelihood as a float (not necessarily negative).
 
-        return params
-
-    def resample_p_transition(self, eps=1e-12):
         """
-        Resample the transition probabilities from the current beta values and kappa
-        value, if the chain is sticky.
-        :param eps: minimum expected value passed to Dirichlet sampling step
-        :return: None
-        """
-        # empty current transition values
-        self.p_transition = {}
+        # kappa==0 implies non-sticky Dirichlet process
+        kappa_value = self.kappa.value if self.sticky else 0.0
+        states = tuple(self.value.keys())
 
-        # refresh each state in turn
-        for state in self.states:
-            params = self._get_p_transition_metaparameters(state)
-            temp_result = np.random.dirichlet(list(params.values())).tolist()
-            p_transition_state = dict(zip(list(params.keys()), temp_result))
-            self.p_transition[state] = shrink_probabilities(p_transition_state, eps)
-
-        # add transition probabilities from unseen states
-        # note: no stickiness update because these are aggregated states
-        params = {
-            k: self.hyperparameters["alpha"] * v
-            for k, v in self.beta_transition.items()
+        # extract parameters for prior distribution
+        parameters = {
+            state0: tuple(
+                self.gamma.value * (1 - kappa_value) * self.beta.value.get(state1)
+                + self.gamma.value * kappa_value * (state0 == state1)
+                for state1 in states
+            )
+            for state0 in states
         }
-        temp_result = np.random.dirichlet(list(params.values())).tolist()
-        p_transition_none = dict(zip(list(params.keys()), temp_result))
-        self.p_transition[bayesian_hmm.EmptySymbol()] = shrink_probabilities(
-            p_transition_none, eps
-        )
 
-    def calculate_p_transition_loglikelihood(self):
-        """
-        Note: this calculates the likelihood over all entries in the transition matrix.
-        If chains have been resampled (this is the case during MCMC sampling, for
-        example), then there may be entries in the transition matrix that no longer
-        correspond to actual states.
-        :return:
-        """
-        ll_transition = 0
-        states = self.p_transition.keys()
-
-        # get probability for each state
+        # iterate within a loop to ensure that unordered dicts match states properly
+        log_likelihoods = {}
         for state in states:
-            params = self._get_p_transition_metaparameters(state)
-            p_transition = shrink_probabilities(
-                {s: self.p_transition[state][s] for s in states}
-            )
-            ll_transition += np.log(
-                stats.dirichlet.pdf(
-                    [p_transition[s] for s in states], [params[s] for s in states]
-                )
-            )
+            # TODO: consider if this is the right place to shrink; or should be done elsewhere.
+            values_shrunk = utils.shrink_probabilities((self.value[state]))
+            values = tuple(values_shrunk[s] for s in states)
+            log_likelihoods[state] = scipy.stats.dirichlet.logpdf(values, parameters[state])
 
-        # get probability for aggregate state
-        params = {
-            k: self.hyperparameters["alpha"] * v
-            for k, v in self.beta_transition.items()
-        }
-        ll_transition += np.log(
-            stats.dirichlet.pdf(
-                [self.p_transition[bayesian_hmm.EmptySymbol()][s] for s in states],
-                [params[s] for s in states],
-            )
-        )
+        return sum(log_likelihoods.values())
 
-        return ll_transition
+    def resample(
+        self, states: typing.Set[symbol.Symbol], counts: typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, int]]
+    ) -> typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, float]]:
+        """Repopulate the Dirichlet processes with new samples.
 
+        Essentially draws a new transition matrix from the current stick breaking process and observed transition
+        counts.
 
-class DirichletProcess(object):
-    """A Bayesian Dirichlet distribution, with prior and posterior probabilities."""
+        Args:
+            states: States to include in the resampling step.
+            counts: The number of state transitions of the latent series.
 
-    def __init__(self, alpha: float, epsilon: float = 1e-12) -> None:
-        # save inputs
-        self.alpha = alpha
-        self.epsilon = epsilon
-
-    def likelihood(self, beta: typing.Sequence[float]) -> float:
-        raise NotImplementedError("TODO")
-
-    def sample_beta(
-        self, counts: typing.Dict[symbol.Symbol, int]
-    ) -> typing.Dict[symbol.Symbol, float]:
-        params = {
-            s: self.n_initial[s]
-            + self.hyperparameters["alpha"] * self.beta_transition[s]
-            for s in self.states
-        }
-        params[bayesian_hmm.EmptySymbol()] = (
-            self.hyperparameters["alpha"]
-            * self.beta_transition[bayesian_hmm.EmptySymbol()]
-        )
-        return params
-
-    def resample_p_initial(self, eps=1e-12):
+        Returns:
+            The resampled value.
         """
-        Resample the starting probabilities. Performed as a sample from the posterior
-        distribution, which is a Dirichlet with pseudocounts and actual counts combined.
-        :param eps: minimum expected value.
-        :return: None.
-        """
-        params = self._get_p_initial_metaparameters()
-        temp_result = np.random.dirichlet(list(params.values())).tolist()
-        p_initial = dict(zip(list(params.keys()), temp_result))
-        self.p_initial = shrink_probabilities(p_initial, eps)
+        # get parameters for posterior distribution
+        parameters = self.posterior_parameters(states=states, counts=counts)
 
-    def calculate_p_initial_loglikelihood(self):
-        params = self._get_p_initial_metaparameters()
-        p_initial = shrink_probabilities(
-            {state: self.p_initial[state] for state in params.keys()}
-        )
-        ll_initial = np.log(
-            stats.dirichlet.pdf(
-                [p_initial[s] for s in params.keys()],
-                [params[s] for s in params.keys()],
+        # resample each state's transition matrix
+        value = {
+            state: dict(
+                zip(parameters[state].keys(), scipy.stats.dirichlet.rvs(alpha=list(parameters[state].values()))[0])
             )
-        )
-        return ll_initial
-
-    def sample_posterior(
-        self, counts: typing.Sequence[int]
-    ) -> typing.Dict[symbol.Symbol, float]:
-        posterior_parameters = [
-            self.alpha + beta * count for beta, count in zip(self.beta, counts)
-        ]
-        beta = numpy.random.dirichlet(alpha=posterior_parameters, size=1)
-        return beta
-
-    def likelihood(self):
-        pass
-
-
-class HierarchicalBayesianDirichletProcess(object):
-    """A family of Bayesian Dirichlet distributions with shared parameters."""
-
-    def __init__(
-        self,
-        alpha_prior: typing.Callable[[], float],
-        gamma_prior: typing.Callable[[], float],
-    ) -> None:
-        # save inputs
-        self.alpha_prior = alpha_prior
-        self.gamma_prior = gamma_prior
-
-        # store child Dirichlet distributions in another dictionary
-        self.children: typing.Dict[symbol.Symbol, DirichletProcess] = dict()
-
-        # initialise hyperparameter values
-        self.alpha = self.sample_alpha_prior()
-        self.gamma = self.sample_gamma_prior()
-
-        # initialise parameter values
-        self.beta: DirichletProcess = DirichletProcess(alpha=self.alpha)
-        self.auxiliary_vars: typing.Dict[symbol.Symbol, float] = {}
-
-    def sample_alpha_prior(self) -> float:
-        self.alpha = self.alpha_prior()
-        return self.alpha
-
-    def sample_alpha_posterior(self) -> float:
-        # find current likelihood & remember alpha
-        likelihood_curr = self.beta.likelihood(self.alpha)
-        alpha_curr = self.alpha
-
-        # sample a new alpha and apply MH testing to resample
-        self.sample_alpha_prior()
-        likelihood_proposed = self.beta.likelihood(self.alpha)
-
-    def sample_gamma_prior(self) -> float:
-        self.gamma = self.gamma_prior()
-        return self.gamma
-
-    def sample_dirichlet_posteriors(
-        self, counts: typing.Dict[symbol.Symbol, float]
-    ) -> typing.Dict[symbol.Symbol, DirichletProcess]:
-        """Resamples the child  distributions."""
-        self.children = {
-            symbol: DirichletProcess(counts[symbol]) for symbol in counts.keys()
+            for state in states
         }
-        return self.children
+
+        # update object
+        self.value = value
+        return self.value
+
+    def add_state(self, state: symbol.Symbol) -> None:
+        """Add a state to the family of Dirichlet processes, without resampling all states.
+
+        Args:
+            state: The new state to include.
+
+        """
+        # First task will be to break out new symbol from existing Dirichlet processes
+        for state_from in self.value.keys():
+            temp_beta = scipy.stats.beta.rvs(1, self.gamma.value)
+            temp_value = self.value.get(state_from).get(symbol.EmptySymbol())
+            self.value[state_from][state] = temp_beta * temp_value
+            self.value[state_from][symbol.EmptySymbol()] = (1.0 - temp_beta) * temp_value
+
+        # Second task will be to create a new Dirichlet process for the new symbol
+        # Posterior parameters have three components: count (posterior element), beta (prior), and kappa (sticky)
+        kappa_value = self.kappa.value if self.sticky else 0.0
+        states = self.beta.value.keys()
+        parameters = {
+            state1: self.gamma.value * (1 - kappa_value) * self.beta.value.get(state1)
+            + self.gamma.value * kappa_value * (state == state1)
+            for state1 in states
+        }
+        value = dict(zip(parameters.keys(), scipy.stats.dirichlet.rvs(alpha=list(parameters.values()))[0]))
+        self.value[state] = value
+
+    def remove_state(self, state: symbol.Symbol) -> None:
+        raise NotImplementedError("TODO: add remove_state functionality for DirichletProcess.")

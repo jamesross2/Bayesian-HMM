@@ -3,6 +3,7 @@
 [![Build Status](https://img.shields.io/travis/jamesross2/Bayesian-HMM/master?logo=travis&style=flat-square)](https://travis-ci.org/jamesross2/Bayesian-HMM?style=flat-square)
 [![PyPI Version](https://img.shields.io/pypi/v/bayesian-hmm?label=PyPI&logo=pypi&style=flat-square)](https://pypi.org/project/bayesian-hmm/)
 [![Code Coverage](https://img.shields.io/codecov/c/github/jamesross2/Bayesian-HMM/master?logo=codecov&style=flat-square&label=codecov)](https://codecov.io/gh/jamesross2/Bayesian-HMM)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?logo=black&style=flat-square)](https://github.com/psf/black)
 
 This code implements a non-parametric Bayesian Hidden Markov model,
 sometimes referred to as a Hierarchical Dirichlet Process Hidden Markov

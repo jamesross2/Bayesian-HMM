@@ -1,5 +1,7 @@
-import bayesian_hmm
+import numpy
 import pytest
+
+import bayesian_hmm
 
 
 def test_symbol() -> None:
@@ -25,3 +27,22 @@ def test_symbol() -> None:
     assert len({s1, s2}) == 1
     counts = {s1: 10, s2: 20}
     assert counts[s1] == 20
+
+
+def test_printing() -> None:
+    symbol = bayesian_hmm.Symbol(1)
+    assert str(symbol) == "1"
+    assert repr(symbol) == "(1)"
+
+    symbol = bayesian_hmm.Symbol("Longname")
+    assert str(symbol) == "Longname"
+    assert repr(symbol) == "(Longname)"
+
+
+def test_comparisons() -> None:
+    """Test symbol comparisons to ensure that hashing is done properly."""
+    symbol1 = bayesian_hmm.Symbol(1)
+    symbol_high = bayesian_hmm.Symbol(667723)
+    symbol_low = bayesian_hmm.Symbol(-numpy.Inf)
+
+    assert symbol_low < symbol1 < symbol_high

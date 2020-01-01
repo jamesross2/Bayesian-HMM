@@ -1,9 +1,8 @@
-#!/usr/bin/env python3
 """A class to store states and emissions abstractly."""
 
 import collections
-import typing
 import functools
+import typing
 
 
 # Symbol objects are essentially wrappers for any hashable atom
@@ -12,9 +11,10 @@ class Symbol(object):
     ___slots__ = ("value",)
 
     def __init__(self, value: typing.Union[str, float, int, None]):
-        if not isinstance(value, collections.Hashable):
+        if not isinstance(value, collections.abc.Hashable):
             raise ValueError("Symbols must have hashable (and immutable) values.")
         self.value = value
+        self.__special: typing.Optional[str] = None
 
     def __str__(self) -> str:
         return str(self.value)
@@ -29,17 +29,13 @@ class Symbol(object):
         if isinstance(other, Symbol):
             return self.value == other.value
         else:
-            raise NotImplementedError(
-                "Cannot compare Symbol object to a {}".format(type(other))
-            )
+            raise NotImplementedError("Cannot compare Symbol object to a {}".format(type(other)))
 
     def __lt__(self, other) -> bool:
         if isinstance(other, Symbol):
             return self.value < other.value
         else:
-            raise NotImplementedError(
-                "Cannot compare Symbol object to a {}".format(type(other))
-            )
+            raise NotImplementedError("Cannot compare Symbol object to a {}".format(type(other)))
 
 
 # define a single empty symbol also
