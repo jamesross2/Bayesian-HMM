@@ -31,8 +31,13 @@ class Hyperparameter(variable.Variable):
         # fill with initial value
         self.value: typing.Union[float, int] = self.prior()
 
-    def log_likelihood(self):
-        """The likelihood of the current parameter value."""
+    def log_likelihood(self) -> float:
+        """The likelihood of the current parameter value.
+
+        Returns:
+            The log likelihood of the parameter's current value.
+
+        """
         return self.prior_log_likelihood(self.value)
 
     def resample(

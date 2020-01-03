@@ -19,9 +19,7 @@ class HyperFunctions(object):
 def test_hyperparameter() -> None:
     """Check that hyperparameters follow Bayesian rules."""
     # create degenerate hyperparameter to test that functions work
-    bayes_hyperparameter = bayesian_hmm.hierarchical_dirichlet_process.Hyperparameter(
-        prior=lambda: 3, log_likelihood=lambda x: 0
-    )
+    bayes_hyperparameter = bayesian_hmm.Hyperparameter(prior=lambda: 3, log_likelihood=lambda x: 0)
 
     # initialised correctly
     assert bayes_hyperparameter.value == 3
@@ -37,9 +35,7 @@ def test_hyperparameter() -> None:
 def test_resample() -> None:
     # use parameter that should increase by 1 each resample
     hyper_functions = HyperFunctions()
-    bayes_hyperparameter = bayesian_hmm.hierarchical_dirichlet_process.Hyperparameter(
-        prior=hyper_functions.newval, log_likelihood=lambda x: 0.0
-    )
+    bayes_hyperparameter = bayesian_hmm.Hyperparameter(prior=hyper_functions.newval, log_likelihood=lambda x: 0.0)
 
     # check that rejected if needed
     with pytest.raises(ValueError, match="Posterior likelihood required if force is False."):

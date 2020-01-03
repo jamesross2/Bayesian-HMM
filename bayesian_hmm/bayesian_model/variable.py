@@ -1,18 +1,18 @@
-from abc import ABCMeta, abstractmethod
+import abc
 
 
-class Variable(object, metaclass=ABCMeta):
+class Variable(object, metaclass=abc.ABCMeta):
     """A parent class for Bayesian variables within the Bayesian-HMM package."""
 
-    @abstractmethod
+    @abc.abstractmethod
     def __init__(self) -> None:
         # self.value: typing.Union[int, float, None] = None
         pass
 
-    @abstractmethod
+    @abc.abstractmethod
     def log_likelihood(self, *args):
         raise NotImplementedError("Bayesian variables must implement a 'likelihood' method.")
 
-    @abstractmethod
+    @abc.abstractmethod
     def resample(self, *args):
         raise NotImplementedError("Bayesian variables must define a 'resample' method.")

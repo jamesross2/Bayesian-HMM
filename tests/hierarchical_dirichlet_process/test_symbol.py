@@ -10,18 +10,18 @@ def test_symbol() -> None:
 
     # symbols created correctly
     for val in vals:
-        symbol = bayesian_hmm.Symbol(val)
+        symbol = bayesian_hmm.State(val)
         assert symbol.value == val
         str(symbol)
 
     # non-symbol values fail
     for badval in badvals:
         with pytest.raises(ValueError, match="Symbols must have hashable"):
-            bayesian_hmm.Symbol(badval)
+            bayesian_hmm.State(badval)
 
     # Symbols with equal value use a single dictionary entry
-    s1 = bayesian_hmm.Symbol(1)
-    s2 = bayesian_hmm.Symbol(1)
+    s1 = bayesian_hmm.State(1)
+    s2 = bayesian_hmm.State(1)
     assert s1 is not s2
     assert s1 == s2
     assert len({s1, s2}) == 1
@@ -30,19 +30,19 @@ def test_symbol() -> None:
 
 
 def test_printing() -> None:
-    symbol = bayesian_hmm.Symbol(1)
+    symbol = bayesian_hmm.State(1)
     assert str(symbol) == "1"
     assert repr(symbol) == "(1)"
 
-    symbol = bayesian_hmm.Symbol("Longname")
+    symbol = bayesian_hmm.State("Longname")
     assert str(symbol) == "Longname"
     assert repr(symbol) == "(Longname)"
 
 
 def test_comparisons() -> None:
     """Test symbol comparisons to ensure that hashing is done properly."""
-    symbol1 = bayesian_hmm.Symbol(1)
-    symbol_high = bayesian_hmm.Symbol(667723)
-    symbol_low = bayesian_hmm.Symbol(-numpy.Inf)
+    symbol1 = bayesian_hmm.State(1)
+    symbol_high = bayesian_hmm.State(667723)
+    symbol_low = bayesian_hmm.State(-numpy.Inf)
 
     assert symbol_low < symbol1 < symbol_high

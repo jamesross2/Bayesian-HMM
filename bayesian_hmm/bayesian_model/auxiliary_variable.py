@@ -8,7 +8,7 @@ import scipy.special
 import scipy.stats
 import sympy.functions.combinatorial.numbers
 
-from . import hyperparameter, stick_breaking_process, symbol, variable
+from . import hyperparameter, states, stick_breaking_process, variable
 
 
 class AuxiliaryVariable(variable.Variable):
@@ -37,7 +37,7 @@ class AuxiliaryVariable(variable.Variable):
         self.beta: stick_breaking_process.StickBreakingProcess = beta
 
         # fill with empty initial value
-        self.value: typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, int]] = {}
+        self.value: typing.Dict[states.State, typing.Dict[states.State, int]] = {}
 
     @staticmethod
     def single_variable_log_likelihood(scale: float, value: int, count: int, exact: bool) -> float:
@@ -91,14 +91,13 @@ class AuxiliaryVariable(variable.Variable):
             An auxiliary variable, sampled with conditional distribution.
 
         Raises:
-            ValueError: if the provided count is a non-positive integer, which lies outside the domain of valid counts.
             err: If an error is raised while computing the approximate log likelihood that is not recognised, it is
                 passed on to the user.
 
         """
-        # TODO: check if value of zero is valid
+        # TODO: check if we can simplify this
         if count <= 0:
-            raise ValueError("Number of state observations should be a positive integer.")
+            return 1
 
         # initialise values required to resample
         p_required = numpy.random.uniform(0, 1)
@@ -129,10 +128,7 @@ class AuxiliaryVariable(variable.Variable):
         return value_proposed
 
     def log_likelihood(
-        self,
-        states: typing.Set[symbol.Symbol],
-        counts: typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, int]],
-        exact: bool = True,
+        self, counts: typing.Dict[states.State, typing.Dict[states.State, int]], exact: bool = True
     ) -> float:
         """Calculate the log likelihood of all auxiliary variables.
 
@@ -142,7 +138,6 @@ class AuxiliaryVariable(variable.Variable):
         process, which is conditionally independent given its auxiliary variable.
 
         Args:
-            states: The states to include in the log likelihood calculation.
             counts: The number of transitions of each type. Note
             exact: If True (the default), computes the exact likelihood whenever possible.
 
@@ -152,62 +147,78 @@ class AuxiliaryVariable(variable.Variable):
         """
         warnings.warn("Calculated likelihood of auxiliary variables should not contribute to model likelihood.")
 
-        # TODO: check if beta[state0] or beta[state1]
-        # TODO: check if observations[state0] or observations[state1]
+        # fill in default values
+        states_from = tuple(counts.keys())
+        if len(states_from) == 0:
+            states_to = tuple()
+        else:
+            states_to = tuple(counts[states_from[0]].keys())
+
+        # TODO: check if beta[state_from] or beta[state_to]
+        # TODO: check if observations[state_from] or observations[state_to]
         # TODO: ensure that summation performed properly
         log_likelihoods = {
-            state0: sum(
+            state_from: sum(
                 self.single_variable_log_likelihood(
-                    scale=self.alpha.value * self.beta.value[state1],
-                    value=self.value[state0][state1],
-                    count=counts[state0][state1],
+                    scale=self.alpha.value * self.beta.value[state_to],
+                    value=self.value[state_from][state_to],
+                    count=counts[state_from][state_to],
                     exact=exact,
                 )
-                for state1 in states
+                for state_to in states_to
             )
-            for state0 in states
+            for state_from in states_from
         }
         return sum(log_likelihoods.values())
 
+    # TODO: add multiprocessing abilities to resampling step here
     def resample(
-        self,
-        states: typing.Set[symbol.Symbol],
-        counts: typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, int]],
-        exact: bool = True,
-    ) -> typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, int]]:
+        self, counts: typing.Dict[states.State, typing.Dict[states.State, int]], exact: bool = True
+    ) -> typing.Dict[states.State, typing.Dict[states.State, int]]:
         """Fill the value attribute of the AuxiliaryVariable with new values according to the marginal distribution.
 
         Args:
-            states: The states which should be considered in a resampling step.
             counts: The transition counts between states for the current set of latent variables.
             exact: If True (the default), computes the exact likelihood whenever possible.
 
         Returns:
             The resampled value.
         """
-        # TODO: check if beta[state0] or beta[state1]
-        # TODO: check if counts[state0][state1] or vice versa
+        # fill in default values
+        states_from = tuple(counts.keys())
+        if len(states_from) == 0:
+            states_to = tuple()
+        else:
+            states_to = tuple(counts[states_from[0]].keys())
+
+        # TODO: check if beta[state_from] or beta[state_to]
+        # TODO: check if counts[state_from][state_to] or vice versa
         value = {
-            state0: {
-                state1: self.single_variable_resample(
-                    scale=self.alpha.value * self.beta.value[state1], count=counts[state0][state1], exact=exact
+            state_from: {
+                state_to: self.single_variable_resample(
+                    scale=self.alpha.value * self.beta.value[state_to], count=counts[state_from][state_to], exact=exact
                 )
-                for state1 in states
+                for state_to in states_to
             }
-            for state0 in states
+            for state_from in states_from
         }
         self.value = value
         return self.value
 
-    def value_aggregated(self, states: typing.Set[symbol.Symbol]) -> typing.Dict[symbol.Symbol, int]:
+    def value_aggregated(self) -> typing.Dict[states.State, int]:
         """The AuxiliaryVariables after the aggregation required to resample the stick breaking process.
 
         This is a convenience function only, since the stick breaking process uses sums of auxiliary variables.
 
-        Args:
-            states: The states for which we want the aggregated variables.
-
         Returns:
             Contains the sum of the auxiliary variables for each state.
+
         """
-        return {state1: sum(self.value.get(state0, dict()).get(state1, 0) for state0 in states) for state1 in states}
+        # fill in default values
+        states_from = tuple(self.value.keys())
+        if len(states_from) == 0:
+            states_to = tuple()
+        else:
+            states_to = self.value[states_from[0]].keys()
+
+        return {state_to: sum(self.value[state_from][state_to] for state_from in states_from) for state_to in states_to}

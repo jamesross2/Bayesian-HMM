@@ -2,17 +2,15 @@
 
 from __future__ import annotations  # auxiliary variable not yet defined; this avoids errors
 
-import copy
 import typing
 
 import numpy
 import scipy.special
 import scipy.stats
 
-from . import auxiliary_variable, hyperparameter, symbol, variable
+from . import auxiliary_variable, hyperparameter, states, variable
 
 
-# TODO: add/remove states functionally
 class StickBreakingProcess(variable.Variable):
     def __init__(self, alpha: hyperparameter.Hyperparameter) -> None:
         """The stick breaking process parametrises the prior for the transition probabilities.
@@ -32,7 +30,7 @@ class StickBreakingProcess(variable.Variable):
         self.alpha: hyperparameter.Hyperparameter = alpha
 
         # fill with empty initial value
-        self.value: typing.Dict[symbol.Symbol, float] = {symbol.EmptySymbol(): 1}
+        self.value: typing.Dict[states.State, float] = {states.AggregateState(): 1}
 
     def log_likelihood(self) -> float:
         """The likelihood of the stick breaking process is the product of likelihoods of each component length.
@@ -45,22 +43,18 @@ class StickBreakingProcess(variable.Variable):
 
         """
         # likelihood given as product of likelihoods of corresponding beta variables
-        values = list(self.value[s] for s in self.value.keys() if s != symbol.EmptySymbol())
+        values = list(self.value[s] for s in self.value.keys() if s != states.AggregateState())
         betas = [val / (1 + val - cumval) for val, cumval in zip(values, numpy.cumsum(values))]
         log_likelihoods = [scipy.stats.beta.logpdf(x=b, a=1, b=self.alpha.value) for b in betas]
         return sum(log_likelihoods)
 
-    def resample(
-        self, states: typing.Set[symbol.Symbol], auxiliary: auxiliary_variable.AuxiliaryVariable
-    ) -> typing.Dict[symbol.Symbol, float]:
+    def resample(self, auxiliary: auxiliary_variable.AuxiliaryVariable) -> typing.Dict[states.State, float]:
         """Draw another realisation of the stick breaking process, according to the current conditional distribution.
 
-        The conditional distribution is parametrised completely by the auxiliary variables, so these will goven the
+        The conditional distribution is parametrised completely by the auxiliary variables, so these will govern the
         resampling probabilities.
 
         Args:
-            states: The states to include in the new draw. The (inifinite number of) remaining states are aggregated
-                into a single ``EmptySymbol``.
             auxiliary: The auxiliary variables, already resampling, which parametrise the conditional distribution for
                 the stick breaking process.
 
@@ -68,13 +62,9 @@ class StickBreakingProcess(variable.Variable):
             The new value of beta.
 
         """
-        # empty state does not have an auxiliary variable
-        states = copy.deepcopy(states)
-        states.remove(symbol.EmptySymbol())
-
         # extract aggregate auxiliary variables to get parameters of conditional distribution for beta
-        parameters = auxiliary.value_aggregated(states)
-        parameters[symbol.EmptySymbol()] = self.alpha.value
+        parameters = auxiliary.value_aggregated()
+        parameters[states.AggregateState()] = self.alpha.value
 
         # resample using parameters of conditional distribution
         values = scipy.stats.dirichlet.rvs(alpha=list(parameters.values()), size=1)[0]
@@ -83,22 +73,29 @@ class StickBreakingProcess(variable.Variable):
         self.value = dict(zip(parameters.keys(), values))
         return self.value
 
-    def add_state(self, state: symbol.Symbol) -> None:
+    def add_state(self, state: states.State) -> None:
         """Separates another state from the aggregate ``EmptySymbol`` to be explicitly included.
 
         Args:
             state: The state to be added to the stick breaking process.
 
         Raises:
-            ValueError: If the given state is already a member of the stick breaking process.
+            ValueError: If the state is already included in the stick breaking process.
 
         """
         if state in self.value.keys():
             raise ValueError(f"State {state} already included in the stick breaking process {self}.")
 
         temp_beta = scipy.stats.beta.rvs(a=1, b=self.alpha.value)
-        self.value[state] = temp_beta * self.value.get(symbol.EmptySymbol())
-        self.value[symbol.EmptySymbol()] = (1.0 - temp_beta) * self.value.get(symbol.EmptySymbol())
+        self.value[state] = temp_beta * self.value.get(states.AggregateState())
+        self.value[states.AggregateState()] = (1.0 - temp_beta) * self.value.get(states.AggregateState())
 
-    def remove_state(self, state: symbol.Symbol) -> None:
-        raise NotImplementedError("TODO: allow states to be removed to stick breaking process")
+    def remove_state(self, state: states.State) -> None:
+        """Drops a state from the process and adds the parameter back into the aggregate state.
+
+        Args:
+            state: The state to be removed from the process.
+
+        """
+        self.value[states.AggregateState()] += self.value[state]
+        del self.value[state]

@@ -10,10 +10,10 @@ import typing
 
 import scipy.stats
 
-from . import auxiliary_variable, dirichlet_process, hyperparameter, stick_breaking_process, symbol, variable
+from . import auxiliary_variable, dirichlet_process, hyperparameter, states, stick_breaking_process, variable
 
 
-class Model(variable.Variable):
+class HierarchicalDirichletProcess(variable.Variable):
     """A non-parametric Bayesian hierarchical Dirichlet process."""
 
     def __init__(
@@ -43,7 +43,7 @@ class Model(variable.Variable):
 
         """
         # init parent
-        super(Model, self).__init__()
+        super(HierarchicalDirichletProcess, self).__init__()
 
         # note whether model should be made sticky or not
         self.sticky: bool = sticky
@@ -55,28 +55,33 @@ class Model(variable.Variable):
         self.kappa = hyperparameter.Hyperparameter(kappa_prior, kappa_log_likelihood) if self.sticky else None
 
         # create stick breaking process
+        self.beta: stick_breaking_process.StickBreakingProcess
         self.beta = stick_breaking_process.StickBreakingProcess(alpha=self.alpha)
+        self.auxiliary_variable: auxiliary_variable.AuxiliaryVariable
         self.auxiliary_variable = auxiliary_variable.AuxiliaryVariable(alpha=self.alpha, beta=self.beta)
 
         # create child dirichlet process
-        self.pi = dirichlet_process.DirichletProcess(beta=self.beta, gamma=self.gamma, kappa=self.kappa)
+        self.pi: dirichlet_process.DirichletProcessFamily
+        self.pi = dirichlet_process.DirichletProcessFamily(beta=self.beta, gamma=self.gamma, kappa=self.kappa)
 
-        # store stores
-        self.states: typing.Set[symbol.Symbol] = {symbol.EmptySymbol()}
+    def log_likelihood(self) -> float:
+        """The total log likelihood of the model, calculated as the sum of its component log likelihoods.
 
-    def log_likelihood(self):
-        """The total log likelihood of the model, calculated as the sum of its component log likelihoods."""
+        Returns:
+            The log likelihood of all parameters within the model (alpha, gamma, beta, pi, and kappa (if the model is
+                sticky).
+
+        """
         likelihoods = (
             self.alpha.log_likelihood(),
             self.gamma.log_likelihood(),
             self.beta.log_likelihood(),
             self.pi.log_likelihood(),
+            self.kappa.log_likelihood() if self.sticky else 0.0,
         )
         return sum(likelihoods)
 
-    def resample(
-        self, states: typing.Set[symbol.Symbol], counts: typing.Dict[symbol.Symbol, typing.Dict[symbol.Symbol, int]]
-    ) -> None:
+    def resample(self, counts: typing.Dict[states.State, typing.Dict[states.State, int]]) -> None:
         """Performs one iteration of sampling for all variables within the Model.
 
         Resampling is performed for hyperparameters first(alpha, gamma, and kappa if the Model is sticky), then for the
@@ -85,16 +90,16 @@ class Model(variable.Variable):
         resampling approach, while the other variables use a Gibbs conditional resampling step.
 
         Args:
-            states: A set of observed states. After the function is complete, the stick breaking process and the
-                Dirichlet process will both contain only these states, and the usual ``EmptyState``.
             counts: The number of transitions between states. The value of `counts[state0][state1]` should be the number
                 of transitions from `state0` to `state1` in the latent variable series.
 
         """
-        # first, ensure that all states exist in the stick breaking process
-        for state in states:
-            if state not in self.beta.value.keys():
-                self.beta.add_state(state)
+        # fill in default values
+        states_from = tuple(counts.keys())
+        if len(states_from) == 0:
+            states_to = set()
+        else:
+            states_to = set(counts[states_from[0]].keys())
 
         # begin by updating hyperparameters
         self.alpha.resample(posterior_log_likelihood=lambda x: self.beta.log_likelihood())
@@ -102,22 +107,40 @@ class Model(variable.Variable):
         if self.sticky:
             self.kappa.resample(posterior_log_likelihood=lambda x: self.pi.log_likelihood())
 
-        # next, update beta (stick breaking process), which also requires updated auxiliary variables
-        self.auxiliary_variable.resample(states=states, counts=counts, exact=True)
-        self.beta.resample(states=states, auxiliary=self.auxiliary_variable)
+        # next, auxiliary variables require beta to have correct values
+        states_remove = self.beta.value.keys() - states_to
+        for state in states_remove:
+            self.beta.remove_state(state)
+
+        states_add = states_to - self.beta.value.keys()
+        for state_to in states_add:
+            if state_to not in self.beta.value.keys():
+                self.beta.add_state(state_to)
+
+        # update beta (stick breaking process), which also requires updated auxiliary variables
+        # first, ensure that stick breaking process has the correct states
+        self.auxiliary_variable.resample(counts=counts, exact=True)
+        self.beta.resample(auxiliary=self.auxiliary_variable)
 
         # finally, update pi (dirichlet process)
-        self.pi.resample(states=states, counts=counts)
+        self.pi.resample(counts=counts)
 
-    def add_state(self, state: symbol.Symbol) -> None:
+    def add_state(self, state: states.State) -> None:
         """Appends another state to the Dirichlet process.
 
         Args:
-            state: The state to be added to the Model.
+            state: The new state to include.
 
         """
         self.beta.add_state(state)
         self.pi.add_state(state)
 
-    def remove_state(self, state: symbol.Symbol) -> None:
-        raise NotImplementedError("TODO: allow states to be removed to stick breaking process")
+    def remove_state(self, state: states.State) -> None:
+        """Drops a state from the Dirichlet family; both its own transitions and the transitions into it.
+
+        Args:
+            state: The state to remove.
+
+        """
+        self.beta.remove_state(state=state)
+        self.pi.remove_state(state=state)
