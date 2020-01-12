@@ -1,17 +1,16 @@
+sudo: false
 language: python
 python:
+  - "3.6"
   - "3.7"
+  - "3.8"
 
-# install dependencies
 install:
   - python setup.py install
-  - pip install black pytest-cov
+  - pip install -r requirements.txt
 
-# run tests
 script:
-  - pytest --cov-report=xml --cov=bayesian_hmm tests/
-  - black --check ./bayesian_hmm ./tests -v
+  - make tox
 
-# send report to code coverage service
 after_success:
-    - codecov
+  - codecov

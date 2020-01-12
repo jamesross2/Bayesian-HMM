@@ -1,68 +1,80 @@
 CURRENT_SIGN_SETTING := $(shell git config commit.gpgSign)
-LINTING_IGNORED="venv/|__pycache__/|build/|_build|dist/|\.eggs|\.tox"
-DARGLINT_INCLUDED=bayesian_hmm
-CLEANING_DIR_REGEX=\(bayesian_hmm\|tests\)
-BLACK_LINELENGTH=120
+PACKAGE_DIRECTORY=bayesian_hmm
+TEST_DIRECTORY=tests
+LINTING_LINELENGTH=120
 
-.PHONY: help clean-pyc clean-build isort lint lint-docstring coverage test release
+.PHONY: help clean-pyc clean-build isort-test isort darglint-test black-test black pytest test format tox
 
 help:
 	@echo "    help: Print this help"
 	@echo "    clean-pyc: Remove python artifacts."
 	@echo "    clean-build: Remove build artifacts."
+	@echo "    isort-test: Test whether import statements are sorted."
 	@echo "    isort: Sort import statements."
-	@echo "    lint: Apply black formatting to project."
-	@echo "    lint-docstring: Check whether comments meet formatting requirements."
-	@echo "    coverage: Run code coverage test."
-	@echo "    test: Run pytest suite."
-	@echo "    build: TODO: write make statement here."
+	@echo "    darglint-test: Test whether docstrings are valid."
+	@echo "    black-test: Test whether black formatting is adhered to."
+	@echo "    black: Apply black formatting."
+	@echo "    pytest: Run pytest suite."
+	@echo "    test: Run all tests."
+	@echo "    format: Apply all formatting tools."
+	@echo "    tox: Run tox testing."
+	@echo "    release: Build and upload to PyPI."
 
 clean-pyc:
-	find . -regex '^./$(CLEANING_DIR_REGEX).*\.py[co]' -delete
-	find . -wholename './__pycache__' -delete
-	find . -regex '^./$(CLEANING_DIR_REGEX).*__pycache__' -delete
-	find . -name '*~' -delete
+	find . -regex '^./\($(PACKAGE_DIRECTORY)\|$(TEST_DIRECTORY)\)/.*\.py[co]' -delete
+	find . -regex '^./\($(PACKAGE_DIRECTORY)\|$(TEST_DIRECTORY)\)/.*__pycache__' -delete
 
 clean-build:
 	rm --force --recursive build/
 	rm --force --recursive dist/
 	rm --force --recursive *.egg-info
 
-isort:
-	isort --recursive bayesian_hmm
-	isort --recursive tests
+isort-test: clean-pyc
+	isort \
+		--recursive \
+		--check-only \
+		--line-width $(LINTING_LINELENGTH) \
+		--multi-line 3 \
+		--trailing-comma \
+		$(PACKAGE_DIRECTORY) $(TEST_DIRECTORY)
 
-lint: isort
+isort: clean-pyc
+	isort \
+		--recursive \
+		--line-width $(LINTING_LINELENGTH) \
+		--multi-line 3 \
+		--trailing-comma \
+		$(PACKAGE_DIRECTORY) $(TEST_DIRECTORY)
+
+darglint-test:
+	darglint --docstring-style google --strictness full $(PACKAGE_DIRECTORY) $(TEST_DIRECTORY)
+
+black-test:
 	black \
-	 	--exclude=$(LINTING_IGNORED) \
-		--line-length $(BLACK_LINELENGTH) \
+		--check \
+	 	--include "^/($(PACKAGE_DIRECTORY)/|$(TEST_DIRECTORY)/).*\.pyi?" \
+		--line-length $(LINTING_LINELENGTH) \
 		.
 
-lint-docstring:
-	darglint --docstring-style google --strictness full $(DARGLINT_INCLUDED)
+black:
+	black \
+	--include "^/($(PACKAGE_DIRECTORY)/|$(TEST_DIRECTORY)/).*\.pyi?" \
+	--line-length $(LINTING_LINELENGTH) \
+	.
 
-coverage: clean-pyc
-	python3 -m pytest \
+pytest:
+	python -m pytest \
 		--verbose \
 		--color=yes \
-		--cov=bayesian_hmm/ \
+		--cov=$(PACKAGE_DIRECTORY) \
 		--cov-report term-missing
 
-test: clean-pyc
-	# check linting
-	black \
-		--exclude=$(LINTING_IGNORED) \
-		--line-length $(BLACK_LINELENGTH) \
-		--check \
-		.
+test: clean-pyc isort-test darglint-test black-test pytest
 
-	# check comment style
-	darglint --docstring-style google --strictness short $(DARGLINT_INCLUDED)
-	
-	# run tests with code coverage
-	python3 -m pytest \
-		--color=yes \
-		--cov=bayesian_hmm
+format: clean-pyc isort black
+
+tox:
+	tox
 
 release: clean-pyc clean-build test
 	git config commit.gpgSign true

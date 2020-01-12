@@ -155,7 +155,6 @@ class AuxiliaryVariable(variable.Variable):
             states_to = tuple(counts[states_from[0]].keys())
 
         # TODO: check if beta[state_from] or beta[state_to]
-        # TODO: check if observations[state_from] or observations[state_to]
         # TODO: ensure that summation performed properly
         log_likelihoods = {
             state_from: sum(
@@ -183,6 +182,7 @@ class AuxiliaryVariable(variable.Variable):
 
         Returns:
             The resampled value.
+
         """
         # fill in default values
         states_from = tuple(counts.keys())
@@ -192,7 +192,6 @@ class AuxiliaryVariable(variable.Variable):
             states_to = tuple(counts[states_from[0]].keys())
 
         # TODO: check if beta[state_from] or beta[state_to]
-        # TODO: check if counts[state_from][state_to] or vice versa
         value = {
             state_from: {
                 state_to: self.single_variable_resample(
