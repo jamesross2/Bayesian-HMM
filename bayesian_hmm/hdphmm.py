@@ -399,18 +399,24 @@ class HDPHMM(object):
         self.emission_counts = emission_counts
         self.transition_counts = transition_counts
 
-    def print_probabilities(self) -> typing.Tuple[str, str]:
+    def print_probabilities(self, digits: int = 4) -> typing.Tuple[str, str]:
         """Create an ascii-printable version of the transition and emission parameters.
+
+        Args:
+            digits: decimal places to print
 
         Returns:
             emission parameters, transition parameters: two tables, each containing a
                 table parameters.
         """
         # make nested lists for clean printing
-        emissions = [[str(s)] + [str(self.emission_model.pi.value[s][e]) for e in self.emissions] for s in self.states]
+        emissions = [
+            [str(s)] + [str(round(self.emission_model.pi.value[s][e], digits)) for e in self.emissions]
+            for s in self.states
+        ]
         emissions.insert(0, ["S_i \\ E_i"] + list(map(str, self.emissions)))
         transitions = [
-            [str(s1)] + [str(self.transition_model.pi.value[s1][s2]) for s2 in self.states]
+            [str(s1)] + [str(round(self.transition_model.pi.value[s1][s2], digits)) for s2 in self.states]
             for s1 in self.states.union({bayesian_model.StartingState()})
         ]
         transitions.insert(
@@ -592,7 +598,7 @@ class HDPHMM(object):
                         self.emission_model.beta.value,
                         self.transition_model.alpha.value,
                         self.transition_model.gamma.value,
-                        self.transition_model.kappa.value,
+                        self.transition_model.kappa.value if self.sticky else None,
                     )
                 )
                 results["beta_emission"].append(copy.deepcopy(self.emission_model.beta.value))

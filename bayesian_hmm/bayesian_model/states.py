@@ -14,7 +14,11 @@ class State(object):
         if not isinstance(value, collections.abc.Hashable):
             raise ValueError("Symbols must have hashable (and immutable) values.")
         self.value = value
-        self.__special: typing.Optional[str] = None
+        self.special_value: typing.Optional[str] = None
+
+    @property
+    def special(self):
+        return self.special_value is not None
 
     def __str__(self) -> str:
         return str(self.value)
@@ -27,7 +31,7 @@ class State(object):
 
     def __eq__(self, other) -> bool:
         if isinstance(other, State):
-            return self.value == other.value and self.__special == other.__special
+            return self.value == other.value and self.special_value == other.special_value
         else:
             raise NotImplementedError("Cannot compare Symbol object to a {}".format(type(other)))
 
@@ -42,23 +46,23 @@ class State(object):
 class StartingState(State):
     def __init__(self):
         super(StartingState, self).__init__(None)
-        self.__special = "start"
+        self.special_value = "start"
 
     def __str__(self) -> str:
         return "StartingState"
 
     def __repr__(self) -> str:
-        return f"({self.__special})"
+        return f"({self.special_value})"
 
 
 # define a single empty symbol also
 class AggregateState(State):
     def __init__(self):
         super(AggregateState, self).__init__(None)
-        self.__special = "aggr"
+        self.special_value = "aggr"
 
     def __str__(self) -> str:
         return "AggregateState"
 
     def __repr__(self) -> str:
-        return f"({self.__special})"
+        return f"({self.special_value})"
