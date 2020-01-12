@@ -1,6 +1,8 @@
 # remove idea PyCharm files
 .idea
 
+# let user create direnv file
+.envrc
 
 # (all below auto-entered by GitHub)
 

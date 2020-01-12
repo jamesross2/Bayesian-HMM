@@ -6,10 +6,20 @@ that uses dynamic numbers of latent states to avoid having to specify this numbe
 advance.
 """
 
-from .hdphmm import HDPHMM
-from .chain import Chain
 import warnings
 
-warnings.warn(
-    "bayesian_hmm is in beta testing and future versions may behave differently"
+from .bayesian_model import (
+    AggregateState,
+    DirichletFamily,
+    DirichletProcessFamily,
+    HierarchicalDirichletProcess,
+    Hyperparameter,
+    StartingState,
+    State,
+    StickBreakingProcess,
+    Variable,
 )
+from .chain import Chain
+from .hdphmm import HDPHMM
+
+warnings.warn("bayesian_hmm is in beta testing and future versions may behave differently")

@@ -2,6 +2,8 @@
 
 [![Build Status](https://img.shields.io/travis/jamesross2/Bayesian-HMM/master?logo=travis&style=flat-square)](https://travis-ci.org/jamesross2/Bayesian-HMM?style=flat-square)
 [![PyPI Version](https://img.shields.io/pypi/v/bayesian-hmm?label=PyPI&logo=pypi&style=flat-square)](https://pypi.org/project/bayesian-hmm/)
+[![Code Coverage](https://img.shields.io/codecov/c/github/jamesross2/Bayesian-HMM/master?logo=codecov&style=flat-square&label=codecov)](https://codecov.io/gh/jamesross2/Bayesian-HMM)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?logo=black&style=flat-square)](https://github.com/psf/black)
 
 This code implements a non-parametric Bayesian Hidden Markov model,
 sometimes referred to as a Hierarchical Dirichlet Process Hidden Markov
@@ -65,10 +67,30 @@ directly.
 
 ```python
 # print final probability estimates (expect 10 latent states)
-hmm.print_probabilities()
+emissions, transitions = hmm.print_probabilities()
+print(emissions)
 ```
 
-This final command prints the transition and emission probabiltiies of the model after
+We get something like the following:
+
+```
+╔Emission probabilities═══════╦════════╦════════╦════════╦════════╗
+║ S_i \ E_i ║ 0      ║ 1      ║ 2      ║ 3      ║ 4      ║ 5      ║
+╠═══════════╬════════╬════════╬════════╬════════╬════════╬════════╣
+║         d ║ 0.0    ║ 0.0    ║ 1.0    ║ 0.0    ║ 0.0    ║ 0.0    ║
+║         j ║ 0.9994 ║ 0.0    ║ 0.0    ║ 0.0006 ║ 0.0    ║ 0.0    ║
+║         m ║ 0.0    ║ 0.0001 ║ 0.0009 ║ 0.9986 ║ 0.0001 ║ 0.0003 ║
+║         g ║ 0.0013 ║ 0.9986 ║ 0.0    ║ 0.0    ║ 0.0001 ║ 0.0    ║
+║         a ║ 0.0    ║ 0.9999 ║ 0.0    ║ 0.0    ║ 0.0    ║ 0.0    ║
+║         s ║ 0.0    ║ 0.0    ║ 0.0    ║ 0.0    ║ 1.0    ║ 0.0    ║
+║         h ║ 0.0009 ║ 0.0    ║ 0.0001 ║ 0.0    ║ 0.999  ║ 0.0    ║
+║         o ║ 0.0002 ║ 0.0004 ║ 0.9967 ║ 0.0026 ║ 0.0001 ║ 0.0    ║
+║         f ║ 0.0    ║ 0.0    ║ 0.0002 ║ 0.9998 ║ 0.0001 ║ 0.0    ║
+║         i ║ 0.0    ║ 0.0032 ║ 0.0001 ║ 0.0    ║ 0.0    ║ 0.9967 ║
+╚═══════════╩════════╩════════╩════════╩════════╩════════╩════════╝
+```
+
+This final command prints the transition and emission probabilities of the model after
 MCMC using the [`terminaltables`](https://pypi.org/project/terminaltables/) package. The 
 code below visualises the results using [`pandas`](https://pypi.org/project/pandas/)
 and [`seaborn`](https://pypi.org/project/seaborn/). For simplicity, we will stick with
@@ -89,16 +111,20 @@ plt.ylabel('Number of iterations')
 plt.show()
 ```
 
-
 ![State counts](https://raw.githubusercontent.com/jamesross2/Bayesian-HMM/master/outputs/plot_state_count.png)
+
+Of course, this is exactly what we expect--we set up the model to have 10 latent states (possibly 11, if the choice
+of hyperparameters encourages a unique starting state.) For something more interesting, we can check which states
+commonly appear first in the latent series.
 
 ```python
 # plot the starting probabilities of the sampled MAP estimate
-map_index = results['chain_loglikelihood'].index(min(results['chain_loglikelihood']))
-parameters_map = results['parameters'][map_index]
+map_index = results['chain_loglikelihood'].index(max(results['chain_loglikelihood']))
+transition_map = results["transition_probabilities"][0][bayesian_hmm.StartingState()]
+states = [state for state in transition_map if not state.special]
 sns.barplot(
-    x=list(parameters_map['p_initial'].keys()), 
-    y=list(parameters_map['p_initial'].values())
+    x=[str(state) for state in states],
+    y=[transition_map[state] for state in states]
 )
 plt.title('Starting state probabilities')
 plt.xlabel('Latent state')
@@ -112,15 +138,21 @@ plt.show()
 # convert list of hyperparameters into a DataFrame
 hyperparam_posterior_df = (
     pd.DataFrame(results['hyperparameters'])
+    .rename({0: "beta_emission", 1: "alpha", 2: "gamma", 3: "kappa"}, axis=1)
     .reset_index()
     .melt(id_vars=['index'])
     .rename(columns={'index': 'iteration'})
 )
+
+# didn't make a sticky chain? Drop kappa
+hyperparam_posterior_df.dropna(inplace=True)
+
 hyperparam_prior_df = pd.concat(
     pd.DataFrame(
         {'iteration': range(500), 'variable': k, 'value': [v() for _ in range(500)]}
     )
     for k, v in hmm.priors.items()
+    if v is not None
 )
 hyperparam_df = pd.concat(
     (hyperparam_prior_df, hyperparam_posterior_df), 
@@ -131,7 +163,7 @@ hyperparam_df.reset_index(inplace=True)
 
 # advanced: plot sampled prior & sampled posterior together
 g = sns.FacetGrid(
-    hyperparam_df[hyperparam_df['variable'] != 'kappa'],
+    hyperparam_df,
     col='variable', 
     col_wrap=3, 
     sharex=False,

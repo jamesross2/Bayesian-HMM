@@ -1,3 +1,9 @@
+# Bayesian-HMM 0.1.0
+
+* Completely redesign underlying objects, to have a modular hierarchical Dirichlet
+process object composed of multiple Bayesian Variable objects.
+* Remove multiple resampling schemes for auxiliary variables.
+
 # Bayesian-HMM 0.0.3
 
 * README expanded to include more usage (plotting of posteriors from mcmc results)
