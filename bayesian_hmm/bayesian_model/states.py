@@ -10,7 +10,7 @@ import typing
 class State(object):
     ___slots__ = ("value",)
 
-    def __init__(self, value: typing.Union[str, float, int, None]):
+    def __init__(self, value: typing.Optional[typing.Union[str, float, int]]):
         if not isinstance(value, collections.abc.Hashable):
             raise ValueError("Symbols must have hashable (and immutable) values.")
         self.value = value
@@ -59,7 +59,20 @@ class StartingState(State):
 class AggregateState(State):
     def __init__(self):
         super(AggregateState, self).__init__(None)
-        self.special_value = "aggr"
+        self.special_value = "aggregate"
+
+    def __str__(self) -> str:
+        return "AggregateState"
+
+    def __repr__(self) -> str:
+        return f"({self.special_value})"
+
+
+# a class to store 'missing' observations
+class MissingState(State):
+    def __init__(self):
+        super(MissingState, self).__init__(None)
+        self.special_value = "missing"
 
     def __str__(self) -> str:
         return "AggregateState"

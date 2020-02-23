@@ -14,6 +14,7 @@ from .bayesian_model import (
     DirichletProcessFamily,
     HierarchicalDirichletProcess,
     Hyperparameter,
+    MissingState,
     StartingState,
     State,
     StickBreakingProcess,

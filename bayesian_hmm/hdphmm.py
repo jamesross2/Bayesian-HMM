@@ -28,6 +28,7 @@ import functools
 import multiprocessing
 import string
 import typing
+import warnings
 
 import numpy
 import scipy.special
@@ -37,13 +38,6 @@ import tqdm
 
 from . import bayesian_model, utils
 from .chain import Chain, resample_latent_sequence
-
-# Shorthand for numeric types.
-Numeric = typing.Union[int, float]
-
-# Oft-used dictionary initializations with shorthands.
-InitDict = typing.Dict[bayesian_model.State, Numeric]
-NestedInitDict = typing.Dict[bayesian_model.State, InitDict]
 
 
 class HDPHMM(object):
@@ -58,7 +52,7 @@ class HDPHMM(object):
         emissions: typing.Optional[typing.Set[bayesian_model.State]] = None,
         sticky: bool = True,
         priors: typing.Dict[str, typing.Callable[[], float]] = None,
-        log_likelihoods: typing.Dict[str, typing.Callable[[Numeric], float]] = None,
+        log_likelihoods: typing.Dict[str, typing.Callable[[float], float]] = None,
     ) -> None:
         """A fully non-parametric Bayesian hierarchical Dirichlet process hidden Markov model.
 
@@ -175,14 +169,19 @@ class HDPHMM(object):
         )
 
         # use internal properties to store aggregate statistics (used to update Bayesian variables efficiently)
-        self.emission_counts: NestedInitDict = {}
-        self.transition_counts: NestedInitDict = {}
+        self.emission_counts: typing.Dict[bayesian_model.State, typing.Dict[bayesian_model.State, int]] = {}
+        self.transition_counts: typing.Dict[bayesian_model.State, typing.Dict[bayesian_model.State, int]] = {}
 
         # states & emissions
         if emissions is None:
             emissions = functools.reduce(set.union, (set(c.emission_sequence) for c in self.chains), set())
+            emissions = emissions - {bayesian_model.states.MissingState()}
         elif not isinstance(emissions, set):
             raise ValueError("emissions must be a set")
+        elif bayesian_model.states.MissingState() in emissions:
+            warnings.warn("Removing MissingState from emissions.")
+            emissions = emissions - {bayesian_model.states.MissingState()}
+
         self.emissions = emissions
         self.states: typing.Set[bayesian_model.State] = set()
 
@@ -244,7 +243,7 @@ class HDPHMM(object):
         """
         return len(self.emissions)
 
-    def tabulate(self) -> numpy.array:
+    def to_array(self) -> numpy.array:
         """Create a table containing the state label of every emission and chain.
 
         Convert the latent and emission sequences for all chains into a single numpy
@@ -258,7 +257,7 @@ class HDPHMM(object):
         """
         hmm_array = numpy.concatenate(
             tuple(
-                numpy.concatenate((numpy.array([[n] * self.chains[n].T]).T, self.chains[n].tabulate()), axis=1)
+                numpy.concatenate((numpy.array([[n] * self.chains[n].T]).T, self.chains[n].to_array()), axis=1)
                 for n in range(self.c)
             ),
             axis=0,
