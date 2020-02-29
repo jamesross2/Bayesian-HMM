@@ -5,9 +5,6 @@ It has methods to initialise the object, resample the latent states, and some co
 printing methods.
 """
 
-# Support typehinting.
-from __future__ import annotations
-
 import copy
 import random
 import typing

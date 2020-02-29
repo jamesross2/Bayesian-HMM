@@ -3,8 +3,6 @@
 Helper functions for the Bayesian-HMM package. Should not be called directly by the
 user.
 """
-# Support typehinting.
-from __future__ import annotations
 
 import itertools
 import random
@@ -72,7 +70,7 @@ def dirichlet_process_generator(
 # used to ensure all hyperparameters have non-zero values
 def max_dict(
     d: typing.Dict[str, typing.Union[int, float]], eps: float = 1e-8
-) -> typing.Dict[bayesian_hmm.State, float]:
+) -> typing.Dict[str, float]:
     return {k: max(float(v), eps) for k, v in d.items()}
 
 

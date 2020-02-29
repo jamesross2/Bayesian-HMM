@@ -21,9 +21,6 @@ estimation (for example) to fix latent states, and facilitate further analysis o
 Chain.
 """
 
-# Support typehinting.
-from __future__ import annotations
-
 import copy
 import functools
 import multiprocessing
@@ -60,8 +57,8 @@ class HDPHMM(object):
         sticky: bool = True,
         alpha: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
         gamma: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=3, scale=3),
-        kappa: typing.Optional[bayesian_model.hyperparameter] = hyperparameter.Beta(shape=1, scale=1),
-        beta_emission: bayesian_model.hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
+        kappa: typing.Optional[bayesian_model.Hyperparameter] = hyperparameter.Beta(shape=1, scale=1),
+        beta_emission: bayesian_model.Hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
     ) -> None:
         """A fully non-parametric Bayesian hierarchical Dirichlet process hidden Markov model.
 

@@ -2,8 +2,6 @@
 
 import typing
 
-import scipy.stats
-
 from . import dirichlet_family, hyperparameter, states, variable
 
 

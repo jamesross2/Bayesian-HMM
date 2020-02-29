@@ -1,4 +1,5 @@
 """Hyperparameters combine a prior sampling function and a likelihood function."""
+
 import copy
 import typing
 
