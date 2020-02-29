@@ -1,8 +1,8 @@
 from . import hyperparameter
 from .auxiliary_variable import AuxiliaryVariable
-from .dirichlet_family import DirichletFamily
-from .dirichlet_process import DirichletProcessFamily
-from .hierarchical_dirichlet import HierarchicalDirichlet
+from .dirichlet_distribution_family import DirichletDistributionFamily
+from .dirichlet_process_family import DirichletProcessFamily
+from .hierarchical_dirichlet_distribution import HierarchicalDirichletDistribution
 from .hierarchical_dirichlet_process import HierarchicalDirichletProcess
 from .hyperparameter import Hyperparameter
 from .states import AggregateState, StartingState, State

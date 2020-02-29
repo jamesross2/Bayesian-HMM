@@ -10,7 +10,7 @@ import warnings
 
 from .bayesian_model import (
     AggregateState,
-    DirichletFamily,
+    DirichletDistributionFamily,
     DirichletProcessFamily,
     HierarchicalDirichletProcess,
     StartingState,

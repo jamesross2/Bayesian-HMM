@@ -68,9 +68,7 @@ def dirichlet_process_generator(
 
 
 # used to ensure all hyperparameters have non-zero values
-def max_dict(
-    d: typing.Dict[str, typing.Union[int, float]], eps: float = 1e-8
-) -> typing.Dict[str, float]:
+def max_dict(d: typing.Dict[str, typing.Union[int, float]], eps: float = 1e-8) -> typing.Dict[str, float]:
     return {k: max(float(v), eps) for k, v in d.items()}
 
 

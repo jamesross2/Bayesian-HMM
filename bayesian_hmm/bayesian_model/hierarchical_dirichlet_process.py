@@ -8,7 +8,7 @@ specifically as a prior / posterior pair for state transition probabilities.
 
 import typing
 
-from . import auxiliary_variable, dirichlet_process, hyperparameter, states, stick_breaking_process, variable
+from . import auxiliary_variable, dirichlet_process_family, hyperparameter, states, stick_breaking_process, variable
 
 
 class HierarchicalDirichletProcess(variable.Variable):
@@ -53,8 +53,8 @@ class HierarchicalDirichletProcess(variable.Variable):
         self.beta = stick_breaking_process.StickBreakingProcess(alpha=self.alpha)
         self.auxiliary_variable: auxiliary_variable.AuxiliaryVariable
         self.auxiliary_variable = auxiliary_variable.AuxiliaryVariable(alpha=self.alpha, beta=self.beta)
-        self.pi: dirichlet_process.DirichletProcessFamily
-        self.pi = dirichlet_process.DirichletProcessFamily(beta=self.beta, gamma=self.gamma, kappa=self.kappa)
+        self.pi: dirichlet_process_family.DirichletProcessFamily
+        self.pi = dirichlet_process_family.DirichletProcessFamily(beta=self.beta, gamma=self.gamma, kappa=self.kappa)
 
     def log_likelihood(self) -> float:
         """The total log likelihood of the model, calculated as the sum of its component log likelihoods.

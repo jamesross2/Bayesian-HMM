@@ -23,6 +23,8 @@ people who are aware of the risks. It can be installed through PyPI:
 pip install bayesian-hmm
 ```
 
+The development version can be installed from the development branch on our GitHub.
+
 
 ## Hidden Markov Models
 

@@ -1,17 +1,17 @@
-import collections
-import copy
 import typing
 
 import scipy.stats
 
 from .. import utils
-from . import hyperparameter, states, variable
+from . import hyperparameter, states, stick_breaking_process, variable
 
 
-class DirichletFamily(variable.Variable):
+class DirichletProcessFamily(variable.Variable):
     def __init__(
         self,
-        beta: typing.Union[hyperparameter.Hyperparameter, typing.Dict[states.State, hyperparameter.Hyperparameter]],
+        beta: stick_breaking_process.StickBreakingProcess,
+        gamma: typing.Optional[hyperparameter.Hyperparameter] = None,
+        kappa: typing.Optional[hyperparameter.Hyperparameter] = None,
     ) -> None:
         """The Dirichlet process gives the (infinite) transition probabilities of the hidden Markov model.
 
@@ -21,26 +21,35 @@ class DirichletFamily(variable.Variable):
         hierarchical Dirichlet process.
 
         Args:
-            beta: The prior for each Dirichlet distribution. This should be either a vector of hyperparameters giving
-                the prior for the finite states (or a single Hyperparameter, in which case every category will have the
-                same prior). States with large associated beta values are more likely to have large transition
-                probabilities.
+            beta: The prior for each Dirichlet distribution. This should be a StickBreakingProcess, which gives a
+                prior over the infinite states of the model. The stick breaking process describing the hierarchical
+                priors for each Dirichlet process. States with large associated beta values are more likely to have
+                large transition probabilities.
+            gamma: The hyperparameter associated with each Dirichlet process.
+            kappa: The hyperparameter associated with the stickiness of each Dirichlet process.
 
         """
         # init parent
-        super(DirichletFamily, self).__init__()
-
-        #
-        if isinstance(beta, hyperparameter.Hyperparameter):
-            beta_dict = collections.defaultdict(lambda: copy.deepcopy(beta))
-        else:
-            beta_dict = beta
+        super(DirichletProcessFamily, self).__init__()
 
         # store parents
-        self.beta: typing.Dict[states.State, hyperparameter.Hyperparameter] = beta_dict
+        self.beta: stick_breaking_process.StickBreakingProcess = beta
+        self.gamma: hyperparameter.Hyperparameter = gamma
+        self.kappa: typing.Optional[hyperparameter.Hyperparameter] = kappa
 
         # fill with empty initial value
-        self.value: typing.Dict[states.State, typing.Dict[states.State, float]] = dict()
+        self.value: typing.Dict[states.State, typing.Dict[states.State, float]]
+        self.value = {states.AggregateState(): {states.AggregateState(): 1}}
+
+    @property
+    def sticky(self) -> bool:
+        """If True, then the DirichletProcess has a kappa variable and favours self-transitions.
+
+        Returns:
+            If True, then the Dirichlet Process is sticky.
+
+        """
+        return self.kappa is not None
 
     @property
     def states_inner(self) -> typing.Set[states.State]:
@@ -79,26 +88,36 @@ class DirichletFamily(variable.Variable):
         for the posterior.
 
         Args:
-            counts: The number of transitions between states. Should include keys for every State in `states`.
+            counts: The number of transitions between states. Should include keys for every Symbol in `states`.
 
         Returns:
             A nested dictionary containing parameter values.
 
         """
         # fill in default values
-        states_from = tuple(counts.keys())
+        states_from = set(counts.keys())
         if len(states_from) == 0:
-            states_to = tuple()
+            states_to = set()
         else:
-            states_to = tuple(counts[states_from[0]].keys())
+            states_to = set(counts[list(states_from)[0]].keys())
+
+        # add aggregate states
+        states_from.add(states.AggregateState())
+        states_to.add(states.AggregateState())
+
+        # kappa==0 implies non-sticky Dirichlet process
+        kappa_value = self.kappa.value if self.sticky else 0.0
 
         # get parameters for posterior distribution
+        # three components: count (posterior element), beta (prior), and kappa (sticky)
         parameters = {
-            state_from: {
-                state_to: counts.get(state_from, dict()).get(state_to, 0) + self.beta[state_to].value
-                for state_to in states_to
+            state0: {
+                state1: counts.get(state0, dict()).get(state1, 0)
+                + self.gamma.value * (1 - kappa_value) * self.beta.value.get(state1)
+                + self.gamma.value * kappa_value * (state0 == state1)
+                for state1 in states_to
             }
-            for state_from in states_from
+            for state0 in states_from
         }
 
         # parameters fully updated
@@ -113,22 +132,37 @@ class DirichletFamily(variable.Variable):
             The log likelihood as a float (not necessarily negative).
 
         """
+        # kappa==0 implies non-sticky Dirichlet process
+        kappa_value = self.kappa.value if self.sticky else 0.0
+        states_from = self.states_inner
+        states_to = self.states_outer
+
         # extract parameters for prior distribution
-        parameters = tuple(self.beta[state_to].value for state_to in self.states_outer)
+        parameters = {
+            state0: tuple(
+                self.gamma.value * (1 - kappa_value) * self.beta.value.get(state1)
+                + self.gamma.value * kappa_value * (state0 == state1)
+                for state1 in states_to
+            )
+            for state0 in states_from
+        }
 
         # iterate within a loop to ensure that unordered dicts match states properly
         log_likelihoods = {}
-        for state_from in self.states_inner:
-            values = tuple(self.value[state_from][state_to] for state_to in self.states_outer)
+        for state_from in states_from:
+            values = tuple(self.value[state_from][state_to] for state_to in states_to)
             values = utils.shrink_probabilities(values)
-            log_likelihoods[state_from] = scipy.stats.dirichlet.logpdf(values, parameters)
+            log_likelihoods[state_from] = scipy.stats.dirichlet.logpdf(values, parameters[state_from])
 
         return sum(log_likelihoods.values())
 
     def resample(
         self, counts: typing.Dict[states.State, typing.Dict[states.State, int]]
     ) -> typing.Dict[states.State, typing.Dict[states.State, float]]:
-        """Repopulate the Dirichlet distribution.
+        """Repopulate the Dirichlet processes with new samples.
+
+        Essentially draws a new transition matrix from the current stick breaking process and observed transition
+        counts.
 
         Args:
             counts: The number of state transitions of the latent series.
@@ -164,23 +198,27 @@ class DirichletFamily(variable.Variable):
 
         Args:
             state: The new state to include.
-            inner: If True (the default), then the new state will be added to the inner keys for the Dirichlet process.
-            outer: If True (the default), then the new state will be added to the outer keys for the Dirichlet process.
+            inner: If True (the default), then the new symbol will be added to the inner keys for the Dirichlet process.
+            outer: If True (the default), then the new symbol will be added to the outer keys for the Dirichlet process.
 
         """
         if outer:
             for state_from in self.states_inner:
-                if len(self.value[state_from]) > 0:
-                    self.value[state_from][state] = 0.0
-                else:
-                    self.value[state_from] = {state: 1.0}
+                temp_beta = scipy.stats.beta.rvs(1, self.gamma.value)
+                temp_value = self.value.get(state_from).get(states.AggregateState())
+                self.value[state_from][state] = temp_beta * temp_value
+                self.value[state_from][states.AggregateState()] = (1.0 - temp_beta) * temp_value
 
         if inner:
-            if len(self.states_outer) > 0:
-                parameters = {state_to: self.beta[state].value for state_to in self.states_outer}
-                value = dict(zip(parameters.keys(), scipy.stats.dirichlet.rvs(alpha=list(parameters.values()))[0]))
-            else:
-                value = dict()
+            kappa_value = self.kappa.value if self.sticky else 0.0
+            states_to = self.states_outer
+            parameters = {
+                state_to: self.gamma.value * (1 - kappa_value) * self.beta.value.get(state_to)
+                + self.gamma.value * kappa_value * (state == state_to)
+                for state_to in states_to.union({state})
+            }
+            parameters[states.AggregateState()] = self.gamma.value
+            value = dict(zip(parameters.keys(), scipy.stats.dirichlet.rvs(alpha=list(parameters.values()))[0]))
             self.value[state] = value
 
     def remove_state(self, state: states.State, inner: bool = True, outer: bool = True) -> None:
@@ -188,10 +226,8 @@ class DirichletFamily(variable.Variable):
 
         Args:
             state: The state to remove.
-            inner: If True (the default), then the new state will be removed from the inner keys for the Dirichlet
-                family.
-            outer: If True (the default), then the new state will be removed from the outer keys for the Dirichlet
-                family.
+            inner: If True (the default), then the new symbol will be added to the inner keys for the Dirichlet process.
+            outer: If True (the default), then the new symbol will be added to the outer keys for the Dirichlet process.
 
         """
         if inner:
@@ -199,4 +235,5 @@ class DirichletFamily(variable.Variable):
 
         if outer:
             for state_from in self.value.keys():
+                self.value[state_from][states.AggregateState()] += self.value[state_from][state]
                 del self.value[state_from][state]

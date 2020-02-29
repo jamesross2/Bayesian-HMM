@@ -2,10 +2,10 @@
 
 import typing
 
-from . import dirichlet_family, hyperparameter, states, variable
+from . import dirichlet_distribution_family, hyperparameter, states, variable
 
 
-class HierarchicalDirichlet(variable.Variable):
+class HierarchicalDirichletDistribution(variable.Variable):
     """A non-parametric Bayesian hierarchical Dirichlet process."""
 
     def __init__(self, beta: hyperparameter.Hyperparameter = hyperparameter.Beta(shape=2, scale=2)) -> None:
@@ -16,11 +16,11 @@ class HierarchicalDirichlet(variable.Variable):
 
         """
         # init parent
-        super(HierarchicalDirichlet, self).__init__()
+        super(HierarchicalDirichletDistribution, self).__init__()
         self.beta = beta
 
         # create a Dirichlet family governed by beta
-        self.pi = dirichlet_family.DirichletFamily(beta=self.beta)
+        self.pi = dirichlet_distribution_family.DirichletDistributionFamily(beta=self.beta)
 
     def log_likelihood(self) -> float:
         """The total log likelihood of the model, calculated as the sum of its component log likelihoods.

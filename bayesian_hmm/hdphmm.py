@@ -138,11 +138,11 @@ class HDPHMM(object):
 
         # create a hierarchical Dirichlet process model to store the Bayesian transition dynamics
         self.transition_model: bayesian_model.HierarchicalDirichletProcess
-        self.emission_model: bayesian_model.HierarchicalDirichlet
+        self.emission_model: bayesian_model.HierarchicalDirichletDistribution
         self.transition_model = bayesian_model.HierarchicalDirichletProcess(
             sticky=self.sticky, alpha=self.alpha, gamma=self.gamma, kappa=self.kappa
         )
-        self.emission_model = bayesian_model.HierarchicalDirichlet(beta=self.beta_emission)
+        self.emission_model = bayesian_model.HierarchicalDirichletDistribution(beta=self.beta_emission)
 
         # use internal properties to store aggregate statistics (used to update Bayesian variables efficiently)
         self.emission_counts: NestedInitDict = {}
