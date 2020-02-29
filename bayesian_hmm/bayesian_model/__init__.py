@@ -1,3 +1,4 @@
+from . import hyperparameter
 from .auxiliary_variable import AuxiliaryVariable
 from .dirichlet_family import DirichletFamily
 from .dirichlet_process import DirichletProcessFamily

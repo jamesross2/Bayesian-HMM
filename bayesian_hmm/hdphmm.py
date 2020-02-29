@@ -20,6 +20,7 @@ posterior distribution for the above probabilities. In addition, we can use MAP
 estimation (for example) to fix latent states, and facilitate further analysis of a
 Chain.
 """
+
 # Support typehinting.
 from __future__ import annotations
 
@@ -30,12 +31,11 @@ import string
 import typing
 
 import numpy
-import scipy.special
-import scipy.stats
 import terminaltables
 import tqdm
 
 from . import bayesian_model, utils
+from .bayesian_model import hyperparameter
 from .chain import Chain, resample_latent_sequence
 
 # Shorthand for numeric types.
@@ -46,6 +46,7 @@ InitDict = typing.Dict[bayesian_model.State, Numeric]
 NestedInitDict = typing.Dict[bayesian_model.State, InitDict]
 
 
+# TODO: check docstring
 class HDPHMM(object):
     """
     The Hierarchical Dirichlet Process Hidden Markov Model object. In fact, this is a
@@ -57,8 +58,10 @@ class HDPHMM(object):
         emission_sequences: typing.Iterable[typing.List[bayesian_model.State]],
         emissions: typing.Optional[typing.Set[bayesian_model.State]] = None,
         sticky: bool = True,
-        priors: typing.Dict[str, typing.Callable[[], float]] = None,
-        log_likelihoods: typing.Dict[str, typing.Callable[[Numeric], float]] = None,
+        alpha: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
+        gamma: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=3, scale=3),
+        kappa: typing.Optional[bayesian_model.hyperparameter] = hyperparameter.Beta(shape=1, scale=1),
+        beta_emission: bayesian_model.hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
     ) -> None:
         """A fully non-parametric Bayesian hierarchical Dirichlet process hidden Markov model.
 
@@ -111,10 +114,10 @@ class HDPHMM(object):
                 Sticky HDPHMMs have an additional value (kappa) added to the probability of self
                 transition. It is recommended to set this depending on the knowledge of the
                 problem at hand.
-            priors: dict, containing priors for the model hyperparameters. Priors
-                should be functions with zero arguments.
-            log_likelihoods: Another dictionary, this time for the log likelihood of
-                parameter priors.
+            alpha: A Hyperparameter governing alpha.
+            gamma: A hyperparameter governing gamma.
+            kappa: A hyperparameter governing kappa. Ignored if sticky is False.
+            beta_emission: A hyperparameter governing the beta of the emission distribution.
 
         Raises:
             ValueError: for invalid combinations of inputs.
@@ -126,53 +129,23 @@ class HDPHMM(object):
         # sticky flag
         if type(sticky) is not bool:
             raise ValueError("`sticky` must be type bool")
+        if sticky and kappa is None:
+            raise ValueError("`sticky` is True but kappa Hyperparameter is None.")
         self.sticky = sticky
 
-        # store hyperparameter priors
-        self.priors = {
-            "alpha": lambda: scipy.stats.gamma.rvs(a=2, scale=2),
-            "gamma": lambda: scipy.stats.gamma.rvs(a=3, scale=3),
-            "kappa": lambda: scipy.stats.beta.rvs(a=1, b=1),
-            "beta_emission": lambda: scipy.stats.gamma.rvs(a=2, scale=2),
-        }
-        if priors is not None:
-            self.priors.update(priors)
-        if len(self.priors) > 4:
-            raise ValueError("Unknown hyperparameter priors present")
-
-        # store hyperparameter log likelihoods
-        self.log_likelihoods = {
-            "alpha": lambda x: scipy.stats.gamma.logpdf(x=x, a=2, scale=2),
-            "gamma": lambda x: scipy.stats.gamma.logpdf(x=x, a=3, scale=3),
-            "kappa": lambda x: scipy.stats.beta.logpdf(x=x, a=1, b=1),
-            "beta_emission": lambda x: scipy.stats.gamma.logpdf(x=x, a=2, scale=2),
-        }
-        if log_likelihoods is not None:
-            self.log_likelihoods.update(log_likelihoods)
-        if len(self.log_likelihoods) > 4:
-            raise ValueError("Unknown hyperparameter likelihoods present")
-
-        if not self.sticky:
-            self.priors["kappa"] = None
-            self.log_likelihoods["kappa"] = None
-            if (priors is not None and "kappa" in priors) or (
-                log_likelihoods is not None and "kappa" in log_likelihoods
-            ):
-                raise ValueError("`sticky` is False, but kappa prior or likelihood function given")
+        # store raw hyperparameter values for convenience
+        self.alpha: hyperparameter.Hyperparameter = alpha
+        self.gamma: hyperparameter.Hyperparameter = gamma
+        self.kappa: hyperparameter.Hyperparameter = kappa
+        self.beta_emission: hyperparameter.Hyperparameter = beta_emission
 
         # create a hierarchical Dirichlet process model to store the Bayesian transition dynamics
+        self.transition_model: bayesian_model.HierarchicalDirichletProcess
+        self.emission_model: bayesian_model.HierarchicalDirichlet
         self.transition_model = bayesian_model.HierarchicalDirichletProcess(
-            alpha_prior=self.priors.get("alpha"),
-            alpha_log_likelihood=self.log_likelihoods.get("alpha"),
-            gamma_prior=self.priors.get("gamma"),
-            gamma_log_likelihood=self.log_likelihoods.get("gamma"),
-            sticky=self.sticky,
-            kappa_prior=self.priors.get("kappa"),
-            kappa_log_likelihood=self.log_likelihoods.get("kappa"),
+            sticky=self.sticky, alpha=self.alpha, gamma=self.gamma, kappa=self.kappa
         )
-        self.emission_model = bayesian_model.HierarchicalDirichlet(
-            beta_prior=self.priors.get("beta_emission"), beta_log_likelihood=self.log_likelihoods["beta_emission"]
-        )
+        self.emission_model = bayesian_model.HierarchicalDirichlet(beta=self.beta_emission)
 
         # use internal properties to store aggregate statistics (used to update Bayesian variables efficiently)
         self.emission_counts: NestedInitDict = {}

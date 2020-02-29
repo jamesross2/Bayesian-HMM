@@ -7,19 +7,19 @@ import bayesian_hmm
 # TODO: expand tests
 def test_stick_breaking_process() -> None:
     # create a standard variable
-    alpha = bayesian_hmm.Hyperparameter(prior=lambda: 0, log_likelihood=lambda x: 0)
+    alpha = bayesian_hmm.hyperparameter.Hyperparameter(prior=lambda: 0, log_likelihood=lambda x: 0)
     stick_breaking_process = bayesian_hmm.StickBreakingProcess(alpha=alpha)
 
     # check that initialisation follows correctly
     assert isinstance(stick_breaking_process, bayesian_hmm.StickBreakingProcess)
-    assert isinstance(stick_breaking_process.alpha, bayesian_hmm.Hyperparameter)
+    assert isinstance(stick_breaking_process.alpha, bayesian_hmm.hyperparameter.Hyperparameter)
     assert alpha is stick_breaking_process.alpha
     assert stick_breaking_process.value == {bayesian_hmm.AggregateState(): 1}
 
 
 def test_log_likelihood() -> None:
     # create a standard variable
-    alpha = bayesian_hmm.Hyperparameter(prior=lambda: 1.0, log_likelihood=lambda x: 0.0)
+    alpha = bayesian_hmm.hyperparameter.Hyperparameter(prior=lambda: 1.0, log_likelihood=lambda x: 0.0)
     stick_breaking_process = bayesian_hmm.StickBreakingProcess(alpha=alpha)
 
     # likelihood for empty variable is easy

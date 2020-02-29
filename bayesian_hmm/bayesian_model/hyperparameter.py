@@ -3,6 +3,7 @@ import copy
 import typing
 
 import numpy
+import scipy.stats
 
 from . import variable
 
@@ -83,3 +84,35 @@ class Hyperparameter(variable.Variable):
             self.value = value_initial
 
         return self.value
+
+
+# common gamma Hyperparameter
+class Gamma(Hyperparameter):
+    def __init__(self, shape: int = 1, scale: int = 1) -> None:
+        """A Gamma-distributed hyperparameter for a Bayesian model.
+
+        Args:
+            shape: the shape parameter of the Gamma distribution
+            scale: the scale parameter of the Gamma distribution
+
+        """
+        # get gamma prior and log likelihood functions
+        prior: typing.Callable[[], float] = lambda: scipy.stats.gamma.rvs(a=shape, scale=scale)
+        log_likelihood: typing.Callable[[float], float] = lambda x: scipy.stats.gamma.logpdf(x=x, a=shape, scale=scale)
+        super(Gamma, self).__init__(prior, log_likelihood)
+
+
+# common beta Hyperparameter
+class Beta(Hyperparameter):
+    def __init__(self, shape: int = 1, scale: int = 1) -> None:
+        """A Beta-distributed hyperparameter for a Bayesian model.
+
+        Args:
+            shape: the shape parameter of the Beta distribution
+            scale: the scale parameter of the Beta distribution
+
+        """
+        # get gamma prior and log likelihood functions
+        prior: typing.Callable[[], float] = lambda: scipy.stats.beta.rvs(a=shape, b=scale)
+        log_likelihood: typing.Callable[[float], float] = lambda x: scipy.stats.beta.logpdf(x=x, a=shape, b=scale)
+        super(Beta, self).__init__(prior, log_likelihood)

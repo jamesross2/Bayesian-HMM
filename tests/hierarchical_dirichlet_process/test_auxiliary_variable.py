@@ -9,7 +9,7 @@ import bayesian_hmm.bayesian_model
 
 
 def create_auxiliary_var(prior=lambda: 3, log_likelihood=lambda x: 0) -> bayesian_hmm.bayesian_model.AuxiliaryVariable:
-    alpha = bayesian_hmm.Hyperparameter(prior=prior, log_likelihood=log_likelihood)
+    alpha = bayesian_hmm.hyperparameter.Hyperparameter(prior=prior, log_likelihood=log_likelihood)
     beta = bayesian_hmm.StickBreakingProcess(alpha=alpha)
     auxiliary_variable = bayesian_hmm.bayesian_model.AuxiliaryVariable(alpha=alpha, beta=beta)
     return auxiliary_variable
@@ -30,7 +30,7 @@ def test_initialisation() -> None:
 
     # initialised correctly
     assert auxiliary_variable.value == {}
-    assert isinstance(auxiliary_variable.alpha, bayesian_hmm.Hyperparameter)
+    assert isinstance(auxiliary_variable.alpha, bayesian_hmm.hyperparameter.Hyperparameter)
     assert isinstance(auxiliary_variable.beta, bayesian_hmm.StickBreakingProcess)
 
 

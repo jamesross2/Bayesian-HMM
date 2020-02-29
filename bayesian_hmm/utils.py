@@ -15,9 +15,6 @@ import numpy as np
 
 import bayesian_hmm
 
-# Shorthand for a numeric type.
-Numeric = typing.Union[int, float]
-
 
 # used to give human-friendly labels to states as they are created
 def label_generator(labels: str = string.ascii_lowercase) -> typing.Generator[str, None, None]:
@@ -45,7 +42,7 @@ def label_generator(labels: str = string.ascii_lowercase) -> typing.Generator[st
 
 # used to choose from new states after resampling latent states
 def dirichlet_process_generator(
-    alpha: Numeric = 1, output_generator: typing.Iterator[typing.Union[str, int]] = None
+    alpha: typing.Union[int, float] = 1, output_generator: typing.Iterator[typing.Union[str, int]] = None
 ) -> typing.Generator[typing.Union[str, int], None, None]:
     """Creates a generator object which yields subsequent draws from a single dirichlet process.
 
@@ -73,7 +70,9 @@ def dirichlet_process_generator(
 
 
 # used to ensure all hyperparameters have non-zero values
-def max_dict(d: typing.Dict[str, Numeric], eps: Numeric = 1e-8) -> typing.Dict[bayesian_hmm.State, Numeric]:
+def max_dict(
+    d: typing.Dict[str, typing.Union[int, float]], eps: float = 1e-8
+) -> typing.Dict[bayesian_hmm.State, float]:
     return {k: max(float(v), eps) for k, v in d.items()}
 
 

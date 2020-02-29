@@ -13,11 +13,11 @@ from .bayesian_model import (
     DirichletFamily,
     DirichletProcessFamily,
     HierarchicalDirichletProcess,
-    Hyperparameter,
     StartingState,
     State,
     StickBreakingProcess,
     Variable,
+    hyperparameter,
 )
 from .chain import Chain
 from .hdphmm import HDPHMM

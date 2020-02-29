@@ -54,20 +54,24 @@ def test_sticky_initialisation():
     assert hmm_sticky.transition_model.kappa.prior != (lambda: 0)
     assert hmm_slippery.transition_model.kappa is None
 
+    # check sticky is safe
+    with pytest.raises(ValueError, match="must be type bool"):
+        bayesian_hmm.HDPHMM(emission_sequences, sticky=5)
+
 
 def test_manual_priors():
     sequences = [[1, 2, 3] * 3] * 3
     emission_sequences = [[bayesian_hmm.State(label) for label in sequence] for sequence in sequences]
-    priors_default = {
-        "alpha": lambda: numpy.random.gamma(2, 2),
-        "gamma": lambda: numpy.random.gamma(3, 3),
-        "kappa": lambda: numpy.random.beta(1, 1),
-        "beta_emission": lambda: numpy.random.gamma(2, 2),
-    }
     hmms = {
         "default": bayesian_hmm.HDPHMM(emission_sequences),
-        "single": bayesian_hmm.HDPHMM(emission_sequences, priors={"alpha": lambda: -1}),
-        "all": bayesian_hmm.HDPHMM(emission_sequences, priors={param: lambda: -1 for param in priors_default.keys()}),
+        "single": bayesian_hmm.HDPHMM(emission_sequences, alpha=bayesian_hmm.hyperparameter.Gamma(5, 5)),
+        "all": bayesian_hmm.HDPHMM(
+            emission_sequences,
+            alpha=bayesian_hmm.hyperparameter.Gamma(4, 4),
+            gamma=bayesian_hmm.hyperparameter.Gamma(1, 1),
+            kappa=bayesian_hmm.hyperparameter.Beta(2, 2),
+            beta_emission=bayesian_hmm.hyperparameter.Gamma(5, 5),
+        ),
     }
 
     # check that priors work in all cases
@@ -76,15 +80,15 @@ def test_manual_priors():
     assert hmms["default"].transition_model.kappa.value > 0
     assert hmms["default"].emission_model.beta.value > 0
 
-    assert hmms["all"].transition_model.alpha.value < 0
-    assert hmms["all"].transition_model.gamma.value < 0
-    assert hmms["all"].transition_model.kappa.value < 0
-    assert hmms["all"].emission_model.beta.value < 0
+    assert hmms["all"].transition_model.alpha.value > 0
+    assert hmms["all"].transition_model.gamma.value > 0
+    assert hmms["all"].transition_model.kappa.value > 0
+    assert hmms["all"].emission_model.beta.value > 0
 
-    assert hmms["single"].transition_model.alpha.value < 0
+    assert hmms["single"].transition_model.alpha.value > 0
     assert hmms["single"].transition_model.gamma.value > 0
     assert hmms["single"].transition_model.kappa.value > 0
     assert hmms["single"].emission_model.beta.value > 0
 
-    with pytest.raises(ValueError, match="`sticky` is False, but kappa prior or likelihood function given"):
-        _ = bayesian_hmm.HDPHMM(emission_sequences, priors={"kappa": lambda: 2}, sticky=False)
+    with pytest.raises(ValueError, match="kappa Hyperparameter is None."):
+        _ = bayesian_hmm.HDPHMM(emission_sequences, sticky=True, kappa=None)

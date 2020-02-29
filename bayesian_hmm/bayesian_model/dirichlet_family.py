@@ -1,4 +1,5 @@
 import collections
+import copy
 import typing
 
 import scipy.stats
@@ -31,7 +32,7 @@ class DirichletFamily(variable.Variable):
 
         #
         if isinstance(beta, hyperparameter.Hyperparameter):
-            beta_dict = collections.defaultdict(lambda: beta)
+            beta_dict = collections.defaultdict(lambda: copy.deepcopy(beta))
         else:
             beta_dict = beta
 

@@ -13,9 +13,7 @@ def test_model_initialisation() -> None:
 
 def test_model_likelihood() -> None:
     # set alpha so that stick breaking process beta variables have a pdf strictly below 1
-    model = bayesian_hmm.HierarchicalDirichletProcess(
-        alpha_prior=lambda: 1.0, alpha_log_likelihood=lambda x: scipy.stats.gamma.logpdf(x=x, a=1, scale=1)
-    )
+    model = bayesian_hmm.HierarchicalDirichletProcess()
     likelihood_init = model.log_likelihood()
     assert likelihood_init < 0
     assert model.log_likelihood() == model.alpha.log_likelihood() + model.gamma.log_likelihood()
