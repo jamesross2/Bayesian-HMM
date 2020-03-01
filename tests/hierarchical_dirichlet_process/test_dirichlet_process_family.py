@@ -6,10 +6,10 @@ import bayesian_hmm
 
 
 def create_dirichlet_process() -> bayesian_hmm.DirichletProcessFamily:
-    alpha = bayesian_hmm.Hyperparameter(prior=lambda: 0.4, log_likelihood=lambda x: 0)
+    alpha = bayesian_hmm.hyperparameter.Hyperparameter(prior=lambda: 0.4, log_likelihood=lambda x: 0)
     beta = bayesian_hmm.StickBreakingProcess(alpha=alpha)
-    gamma = bayesian_hmm.Hyperparameter(prior=lambda: 3.0, log_likelihood=lambda x: 0)
-    kappa = bayesian_hmm.Hyperparameter(prior=lambda: 0.1, log_likelihood=lambda x: 0)
+    gamma = bayesian_hmm.hyperparameter.Hyperparameter(prior=lambda: 3.0, log_likelihood=lambda x: 0)
+    kappa = bayesian_hmm.hyperparameter.Hyperparameter(prior=lambda: 0.1, log_likelihood=lambda x: 0)
     dirichlet_process = bayesian_hmm.DirichletProcessFamily(beta=beta, gamma=gamma, kappa=kappa)
     return dirichlet_process
 
@@ -33,21 +33,23 @@ def test_initialisation() -> None:
     # initialised correctly
     assert dirichlet_process.value == {bayesian_hmm.AggregateState(): {bayesian_hmm.AggregateState(): 1}}
     assert isinstance(dirichlet_process.beta, bayesian_hmm.StickBreakingProcess)
-    assert isinstance(dirichlet_process.gamma, bayesian_hmm.Hyperparameter)
-    assert isinstance(dirichlet_process.kappa, bayesian_hmm.Hyperparameter)
+    assert isinstance(dirichlet_process.gamma, bayesian_hmm.hyperparameter.Hyperparameter)
+    assert isinstance(dirichlet_process.kappa, bayesian_hmm.hyperparameter.Hyperparameter)
 
 
 def test_stickiness() -> None:
     dirichlet_process_sticky = create_dirichlet_process()
     dirichlet_process_slippery = bayesian_hmm.DirichletProcessFamily(
-        beta=dirichlet_process_sticky.beta, gamma=dirichlet_process_sticky.gamma
+        beta=dirichlet_process_sticky.beta,
+        gamma=dirichlet_process_sticky.gamma,
+        kappa=bayesian_hmm.hyperparameter.Dummy(),
     )
 
     # check that stickiness works
     assert dirichlet_process_sticky.sticky
     assert not dirichlet_process_slippery.sticky
-    assert isinstance(dirichlet_process_sticky.kappa, bayesian_hmm.Hyperparameter)
-    assert dirichlet_process_slippery.kappa is None
+    assert isinstance(dirichlet_process_sticky.kappa, bayesian_hmm.hyperparameter.Hyperparameter)
+    assert isinstance(dirichlet_process_slippery.kappa, bayesian_hmm.hyperparameter.Dummy)
 
 
 def test_posterior_parameters() -> None:
@@ -91,8 +93,8 @@ def test_log_likelihood() -> None:
     symbols, counts = add_states(dirichlet_process, range(10))
     dirichlet_process.resample(counts=counts)
 
-    # check that log likelihood has decreased
-    assert dirichlet_process.log_likelihood() < 0
+    # check that log likelihood has updated
+    assert dirichlet_process.log_likelihood() != 0
 
 
 def test_resample() -> None:

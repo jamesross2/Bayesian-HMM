@@ -8,9 +8,7 @@ specifically as a prior / posterior pair for state transition probabilities.
 
 import typing
 
-import scipy.stats
-
-from . import auxiliary_variable, dirichlet_process, hyperparameter, states, stick_breaking_process, variable
+from . import auxiliary_variable, dirichlet_process_family, hyperparameter, states, stick_breaking_process, variable
 
 
 class HierarchicalDirichletProcess(variable.Variable):
@@ -18,51 +16,47 @@ class HierarchicalDirichletProcess(variable.Variable):
 
     def __init__(
         self,
-        alpha_prior: typing.Callable[[], float] = lambda: scipy.stats.gamma.rvs(a=2, scale=2),
-        alpha_log_likelihood: typing.Callable[[float], float] = lambda x: scipy.stats.gamma.logpdf(x=x, a=2, scale=2),
-        gamma_prior: typing.Callable[[], float] = lambda: scipy.stats.gamma.rvs(a=3, scale=3),
-        gamma_log_likelihood: typing.Callable[[float], float] = lambda x: scipy.stats.gamma.logpdf(x=x, a=3, scale=3),
-        sticky: bool = False,
-        kappa_prior: typing.Callable[[], float] = lambda: scipy.stats.beta.rvs(a=1, b=1),
-        kappa_log_likelihood: typing.Callable[[float], float] = lambda x: scipy.stats.beta.logpdf(x=x, a=1, b=1),
+        sticky: bool,
+        alpha: hyperparameter.Hyperparameter,
+        gamma: hyperparameter.Hyperparameter,
+        kappa: hyperparameter.Hyperparameter,
     ) -> None:
         """A non-parametric Bayesian hierarchical Dirichlet process.
 
         Args:
-            alpha_prior: The prior distribution of alpha.
-            alpha_log_likelihood: The prior log likelihood of alpha. Note that this is different to the likelihood
-                function passed to (and contained in) the `Model.alpha` `Hyperparameter`, since that function is the
-                posterior log likelihood for alpha.
-            gamma_prior: Same as for alpha.
-            gamma_log_likelihood: Same as for alpha.
-            sticky: If False (the default), the usual model is created. If True, then an additional Hyperparameter
+            sticky: If False, the usual model is created. If True, then an additional Hyperparameter
                 `kappa` is created, which governs the self-transition probabilities within the transition probabilities.
-            kappa_prior: Same as for alpha. If `sticky` is False, then this argument is ignored. The domain should be
-                restricted to the interval `[0, 1]` (with `0` indicating no stickiness, and `1` being large stickiness).
-            kappa_log_likelihood: Same as for alpha. If `sticky` is False, then this argument is ignored.
+            alpha: the Hyperparameter controlling the variability of the stick breaking process.
+            gamma: the Hyperparameter controlling the sampling of new states in the Dirichlet stick breaking process.
+            kappa: the Hyperparameter controlling the stickyness of the hierarchical Dirichlet process. If sticky is
+                False, then this value is ignored.
+
+        Raises:
+            ValueError: If the chain is sticky but not kappa hyperparameter is provided.
 
         """
         # init parent
         super(HierarchicalDirichletProcess, self).__init__()
 
-        # note whether model should be made sticky or not
+        # replace kappa with None if the process is not sticky
+        if sticky and isinstance(kappa, hyperparameter.Dummy):
+            raise ValueError("Hyperparameter kappa must be non-dummy for a sticky process.")
+        if not sticky:
+            kappa = hyperparameter.Dummy(0.0)
+
+        # store hyperparameters
         self.sticky: bool = sticky
+        self.alpha: hyperparameter.Hyperparameter = alpha
+        self.gamma: hyperparameter.Hyperparameter = gamma
+        self.kappa: hyperparameter.Hyperparameter = kappa
 
-        # create hyperparameters for alpha and gamma
-        self.alpha: hyperparameter.Hyperparameter = hyperparameter.Hyperparameter(alpha_prior, alpha_log_likelihood)
-        self.gamma: hyperparameter.Hyperparameter = hyperparameter.Hyperparameter(gamma_prior, gamma_log_likelihood)
-        self.kappa: typing.Optional[hyperparameter.Hyperparameter]
-        self.kappa = hyperparameter.Hyperparameter(kappa_prior, kappa_log_likelihood) if self.sticky else None
-
-        # create stick breaking process
+        # create all component distributions (beta, auxiliary variables, and final HDP)
         self.beta: stick_breaking_process.StickBreakingProcess
         self.beta = stick_breaking_process.StickBreakingProcess(alpha=self.alpha)
         self.auxiliary_variable: auxiliary_variable.AuxiliaryVariable
         self.auxiliary_variable = auxiliary_variable.AuxiliaryVariable(alpha=self.alpha, beta=self.beta)
-
-        # create child dirichlet process
-        self.pi: dirichlet_process.DirichletProcessFamily
-        self.pi = dirichlet_process.DirichletProcessFamily(beta=self.beta, gamma=self.gamma, kappa=self.kappa)
+        self.pi: dirichlet_process_family.DirichletProcessFamily
+        self.pi = dirichlet_process_family.DirichletProcessFamily(beta=self.beta, gamma=self.gamma, kappa=self.kappa)
 
     def log_likelihood(self) -> float:
         """The total log likelihood of the model, calculated as the sum of its component log likelihoods.
@@ -72,12 +66,13 @@ class HierarchicalDirichletProcess(variable.Variable):
                 sticky).
 
         """
+        # get components of log likelihood
         likelihoods = (
             self.alpha.log_likelihood(),
             self.gamma.log_likelihood(),
             self.beta.log_likelihood(),
             self.pi.log_likelihood(),
-            self.kappa.log_likelihood() if self.sticky else 0.0,
+            self.kappa.log_likelihood(),
         )
         return sum(likelihoods)
 
@@ -96,6 +91,7 @@ class HierarchicalDirichletProcess(variable.Variable):
         """
         # fill in default values
         states_from = tuple(counts.keys())
+        states_to: typing.Set[typing.Any]
         if len(states_from) == 0:
             states_to = set()
         else:
@@ -105,6 +101,7 @@ class HierarchicalDirichletProcess(variable.Variable):
         self.alpha.resample(posterior_log_likelihood=lambda x: self.beta.log_likelihood())
         self.gamma.resample(posterior_log_likelihood=lambda x: self.pi.log_likelihood())
         if self.sticky:
+            assert self.kappa is not None
             self.kappa.resample(posterior_log_likelihood=lambda x: self.pi.log_likelihood())
 
         # next, auxiliary variables require beta to have correct values

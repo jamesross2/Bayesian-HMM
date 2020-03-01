@@ -6,13 +6,12 @@ from .. import utils
 from . import hyperparameter, states, stick_breaking_process, variable
 
 
-# TODO: clarify model arguments
 class DirichletProcessFamily(variable.Variable):
     def __init__(
         self,
         beta: stick_breaking_process.StickBreakingProcess,
-        gamma: typing.Optional[hyperparameter.Hyperparameter] = None,
-        kappa: typing.Optional[hyperparameter.Hyperparameter] = None,
+        gamma: hyperparameter.Hyperparameter,
+        kappa: hyperparameter.Hyperparameter,
     ) -> None:
         """The Dirichlet process gives the (infinite) transition probabilities of the hidden Markov model.
 
@@ -36,7 +35,7 @@ class DirichletProcessFamily(variable.Variable):
         # store parents
         self.beta: stick_breaking_process.StickBreakingProcess = beta
         self.gamma: hyperparameter.Hyperparameter = gamma
-        self.kappa: typing.Optional[hyperparameter.Hyperparameter] = kappa
+        self.kappa: hyperparameter.Hyperparameter = kappa
 
         # fill with empty initial value
         self.value: typing.Dict[states.State, typing.Dict[states.State, float]]
@@ -50,7 +49,7 @@ class DirichletProcessFamily(variable.Variable):
             If True, then the Dirichlet Process is sticky.
 
         """
-        return self.kappa is not None
+        return not isinstance(self.kappa, hyperparameter.Dummy)
 
     @property
     def states_inner(self) -> typing.Set[states.State]:
@@ -97,6 +96,7 @@ class DirichletProcessFamily(variable.Variable):
         """
         # fill in default values
         states_from = set(counts.keys())
+        states_to: typing.Set
         if len(states_from) == 0:
             states_to = set()
         else:
@@ -106,16 +106,13 @@ class DirichletProcessFamily(variable.Variable):
         states_from.add(states.AggregateState())
         states_to.add(states.AggregateState())
 
-        # kappa==0 implies non-sticky Dirichlet process
-        kappa_value = self.kappa.value if self.sticky else 0.0
-
         # get parameters for posterior distribution
         # three components: count (posterior element), beta (prior), and kappa (sticky)
         parameters = {
             state0: {
                 state1: counts.get(state0, dict()).get(state1, 0)
-                + self.gamma.value * (1 - kappa_value) * self.beta.value.get(state1)
-                + self.gamma.value * kappa_value * (state0 == state1)
+                + self.gamma.value * (1 - self.kappa.value) * self.beta.value[state1]
+                + self.gamma.value * self.kappa.value * (state0 == state1)
                 for state1 in states_to
             }
             for state0 in states_from
@@ -133,16 +130,14 @@ class DirichletProcessFamily(variable.Variable):
             The log likelihood as a float (not necessarily negative).
 
         """
-        # kappa==0 implies non-sticky Dirichlet process
-        kappa_value = self.kappa.value if self.sticky else 0.0
         states_from = self.states_inner
         states_to = self.states_outer
 
         # extract parameters for prior distribution
         parameters = {
             state0: tuple(
-                self.gamma.value * (1 - kappa_value) * self.beta.value.get(state1)
-                + self.gamma.value * kappa_value * (state0 == state1)
+                self.gamma.value * (1 - self.kappa.value) * self.beta.value[state1]
+                + self.gamma.value * self.kappa.value * (state0 == state1)
                 for state1 in states_to
             )
             for state0 in states_from
@@ -151,9 +146,11 @@ class DirichletProcessFamily(variable.Variable):
         # iterate within a loop to ensure that unordered dicts match states properly
         log_likelihoods = {}
         for state_from in states_from:
-            values = tuple(self.value[state_from][state_to] for state_to in states_to)
+            values: typing.Sequence[float] = tuple(self.value[state_from][state_to] for state_to in states_to)
             values = utils.shrink_probabilities(values)
-            log_likelihoods[state_from] = scipy.stats.dirichlet.logpdf(values, parameters[state_from])
+            log_likelihoods[state_from] = scipy.stats.dirichlet.logpdf(
+                values, utils.shrink_probabilities(parameters[state_from])
+            )
 
         return sum(log_likelihoods.values())
 
@@ -206,19 +203,19 @@ class DirichletProcessFamily(variable.Variable):
         if outer:
             for state_from in self.states_inner:
                 temp_beta = scipy.stats.beta.rvs(1, self.gamma.value)
-                temp_value = self.value.get(state_from).get(states.AggregateState())
+                temp_value = self.value[state_from][states.AggregateState()]
                 self.value[state_from][state] = temp_beta * temp_value
                 self.value[state_from][states.AggregateState()] = (1.0 - temp_beta) * temp_value
 
         if inner:
-            kappa_value = self.kappa.value if self.sticky else 0.0
             states_to = self.states_outer
             parameters = {
-                state_to: self.gamma.value * (1 - kappa_value) * self.beta.value.get(state_to)
-                + self.gamma.value * kappa_value * (state == state_to)
+                state_to: self.gamma.value * (1 - self.kappa.value) * self.beta.value[state_to]
+                + self.gamma.value * self.kappa.value * (state == state_to)
                 for state_to in states_to.union({state})
             }
             parameters[states.AggregateState()] = self.gamma.value
+            parameters = utils.shrink_probabilities(parameters)
             value = dict(zip(parameters.keys(), scipy.stats.dirichlet.rvs(alpha=list(parameters.values()))[0]))
             self.value[state] = value
 

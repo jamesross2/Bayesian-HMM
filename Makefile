@@ -2,8 +2,9 @@ CURRENT_SIGN_SETTING := $(shell git config commit.gpgSign)
 PACKAGE_DIRECTORY=bayesian_hmm
 TEST_DIRECTORY=tests
 LINTING_LINELENGTH=120
+STUB_DIRECTORY=stubs
 
-.PHONY: help clean-pyc clean-build isort-test isort darglint-test black-test black pytest test format tox
+.PHONY: help clean-pyc clean-build isort-test isort darglint-test black-test black stubs mypy-test pytest test format tox
 
 help:
 	@echo "    help: Print this help"
@@ -14,6 +15,8 @@ help:
 	@echo "    darglint-test: Test whether docstrings are valid."
 	@echo "    black-test: Test whether black formatting is adhered to."
 	@echo "    black: Apply black formatting."
+	@echo "    stubs: Run stub generation."
+	@echo "    mypy-test: Test whether mypy type annotations are sufficient."
 	@echo "    pytest: Run pytest suite."
 	@echo "    test: Run all tests."
 	@echo "    format: Apply all formatting tools."
@@ -58,9 +61,15 @@ black-test:
 
 black:
 	black \
-	--include "^/($(PACKAGE_DIRECTORY)/|$(TEST_DIRECTORY)/).*\.pyi?" \
-	--line-length $(LINTING_LINELENGTH) \
-	.
+		--include "^/($(PACKAGE_DIRECTORY)/|$(TEST_DIRECTORY)/).*\.pyi?" \
+		--line-length $(LINTING_LINELENGTH) \
+		.
+
+stubs: clean-pyc
+	stubgen -o $(STUB_DIRECTORY) $(PACKAGE_DIRECTORY)
+
+mypy-test:
+	mypy $(PACKAGE_DIRECTORY)
 
 pytest:
 	python -m pytest \
@@ -69,9 +78,9 @@ pytest:
 		--cov=$(PACKAGE_DIRECTORY) \
 		--cov-report term-missing
 
-test: clean-pyc isort-test darglint-test black-test pytest
+test: clean-pyc isort-test darglint-test black-test mypy-test pytest
 
-format: clean-pyc isort black
+format: clean-pyc isort black stubs
 
 tox:
 	tox

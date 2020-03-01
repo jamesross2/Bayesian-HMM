@@ -1,4 +1,5 @@
 import collections
+import copy
 import typing
 
 import scipy.stats
@@ -7,7 +8,7 @@ from .. import utils
 from . import hyperparameter, states, variable
 
 
-class DirichletFamily(variable.Variable):
+class DirichletDistributionFamily(variable.Variable):
     def __init__(
         self,
         beta: typing.Union[hyperparameter.Hyperparameter, typing.Dict[states.State, hyperparameter.Hyperparameter]],
@@ -25,18 +26,24 @@ class DirichletFamily(variable.Variable):
                 same prior). States with large associated beta values are more likely to have large transition
                 probabilities.
 
+        Raises:
+            ValueError: if the given beta doesn't match any expected input type.
+
         """
         # init parent
-        super(DirichletFamily, self).__init__()
+        super(DirichletDistributionFamily, self).__init__()
 
         #
+        beta_factory: typing.Mapping[states.State, hyperparameter.Hyperparameter]
         if isinstance(beta, hyperparameter.Hyperparameter):
-            beta_dict = collections.defaultdict(lambda: beta)
+            beta_factory = collections.defaultdict(lambda: copy.deepcopy(beta))  # type: ignore
+        elif isinstance(beta, dict):
+            beta_factory = beta
         else:
-            beta_dict = beta
+            raise ValueError("Unrecognised beta type {}, use a hyperparameter or dict.".format(type(beta)))
 
         # store parents
-        self.beta: typing.Dict[states.State, hyperparameter.Hyperparameter] = beta_dict
+        self._beta_factory: typing.Mapping[states.State, hyperparameter.Hyperparameter] = beta_factory
 
         # fill with empty initial value
         self.value: typing.Dict[states.State, typing.Dict[states.State, float]] = dict()
@@ -86,6 +93,7 @@ class DirichletFamily(variable.Variable):
         """
         # fill in default values
         states_from = tuple(counts.keys())
+        states_to: typing.Sequence[states.State]
         if len(states_from) == 0:
             states_to = tuple()
         else:
@@ -94,7 +102,7 @@ class DirichletFamily(variable.Variable):
         # get parameters for posterior distribution
         parameters = {
             state_from: {
-                state_to: counts.get(state_from, dict()).get(state_to, 0) + self.beta[state_to].value
+                state_to: counts.get(state_from, dict()).get(state_to, 0) + self._beta_factory[state_to].value
                 for state_to in states_to
             }
             for state_from in states_from
@@ -113,13 +121,13 @@ class DirichletFamily(variable.Variable):
 
         """
         # extract parameters for prior distribution
-        parameters = tuple(self.beta[state_to].value for state_to in self.states_outer)
+        parameters = tuple(self._beta_factory[state_to].value for state_to in self.states_outer)
 
         # iterate within a loop to ensure that unordered dicts match states properly
         log_likelihoods = {}
         for state_from in self.states_inner:
-            values = tuple(self.value[state_from][state_to] for state_to in self.states_outer)
-            values = utils.shrink_probabilities(values)
+            values: typing.Sequence[float] = tuple(self.value[state_from][state_to] for state_to in self.states_outer)
+            values = tuple(utils.shrink_probabilities(values))
             log_likelihoods[state_from] = scipy.stats.dirichlet.logpdf(values, parameters)
 
         return sum(log_likelihoods.values())
@@ -176,7 +184,7 @@ class DirichletFamily(variable.Variable):
 
         if inner:
             if len(self.states_outer) > 0:
-                parameters = {state_to: self.beta[state].value for state_to in self.states_outer}
+                parameters = {state_to: self._beta_factory[state].value for state_to in self.states_outer}
                 value = dict(zip(parameters.keys(), scipy.stats.dirichlet.rvs(alpha=list(parameters.values()))[0]))
             else:
                 value = dict()

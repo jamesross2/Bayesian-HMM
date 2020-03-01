@@ -2,37 +2,25 @@
 
 import typing
 
-import scipy.stats
-
-from . import dirichlet_family, hyperparameter, states, variable
+from . import dirichlet_distribution_family, hyperparameter, states, variable
 
 
-class HierarchicalDirichlet(variable.Variable):
+class HierarchicalDirichletDistribution(variable.Variable):
     """A non-parametric Bayesian hierarchical Dirichlet process."""
 
-    def __init__(
-        self,
-        beta_prior: typing.Callable[[], float] = lambda: scipy.stats.gamma.rvs(a=2, scale=2),
-        beta_log_likelihood: typing.Callable[[float], float] = lambda x: scipy.stats.gamma.logpdf(x=x, a=2, scale=2),
-    ) -> None:
+    def __init__(self, beta: hyperparameter.Hyperparameter) -> None:
         """A non-parametric Bayesian hierarchical Dirichlet process.
 
         Args:
-            beta_prior: The prior distribution of beta, for a single categorical emission.
-            beta_log_likelihood: The prior log likelihood of beta. Note that this is different to the likelihood
-                function passed to (and contained in) the `Model.alpha` `Hyperparameter`, since that function is the
-                posterior log likelihood for the dirichlet process.
+            beta: The hyperparameter prior controlling the hierarchical Dirichlet distribution.
 
         """
         # init parent
-        super(HierarchicalDirichlet, self).__init__()
-
-        # create hyperparameter for beta
-        self.beta: hyperparameter.Hyperparameter
-        self.beta = hyperparameter.Hyperparameter(prior=beta_prior, log_likelihood=beta_log_likelihood)
+        super(HierarchicalDirichletDistribution, self).__init__()
+        self.beta = beta
 
         # create a Dirichlet family governed by beta
-        self.pi = dirichlet_family.DirichletFamily(beta=self.beta)
+        self.pi = dirichlet_distribution_family.DirichletDistributionFamily(beta=self.beta)
 
     def log_likelihood(self) -> float:
         """The total log likelihood of the model, calculated as the sum of its component log likelihoods.

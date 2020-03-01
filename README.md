@@ -1,5 +1,6 @@
 # Bayesian Hidden Markov Models
 
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/Bayesian-HMM?style=flat-square)](https://pypi.org/project/bayesian-hmm/)
 [![Build Status](https://img.shields.io/travis/jamesross2/Bayesian-HMM/master?logo=travis&style=flat-square)](https://travis-ci.org/jamesross2/Bayesian-HMM?style=flat-square)
 [![PyPI Version](https://img.shields.io/pypi/v/bayesian-hmm?label=PyPI&logo=pypi&style=flat-square)](https://pypi.org/project/bayesian-hmm/)
 [![Code Coverage](https://img.shields.io/codecov/c/github/jamesross2/Bayesian-HMM/master?logo=codecov&style=flat-square&label=codecov)](https://codecov.io/gh/jamesross2/Bayesian-HMM)
@@ -22,6 +23,8 @@ people who are aware of the risks. It can be installed through PyPI:
 ```sh
 pip install bayesian-hmm
 ```
+
+The development version can be installed from the development branch on our GitHub.
 
 
 ## Hidden Markov Models

@@ -4,6 +4,9 @@
 # let user create direnv file
 .envrc
 
+# py virtual environments
+pyvenv.cfg
+
 # (all below auto-entered by GitHub)
 
 # Byte-compiled / optimized / DLL files
@@ -97,6 +100,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+pyvenv.cfg
 
 # Spyder project settings
 .spyderproject

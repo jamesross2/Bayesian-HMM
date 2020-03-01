@@ -10,14 +10,15 @@ import warnings
 
 from .bayesian_model import (
     AggregateState,
-    DirichletFamily,
+    DirichletDistributionFamily,
     DirichletProcessFamily,
     HierarchicalDirichletProcess,
-    Hyperparameter,
+    MissingState,
     StartingState,
     State,
     StickBreakingProcess,
     Variable,
+    hyperparameter,
 )
 from .chain import Chain
 from .hdphmm import HDPHMM

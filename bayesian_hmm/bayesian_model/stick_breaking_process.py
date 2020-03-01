@@ -1,7 +1,5 @@
 """A stick breaking process implementation of the Dirichlet process."""
 
-from __future__ import annotations  # auxiliary variable not yet defined; this avoids errors
-
 import typing
 
 import numpy
@@ -48,7 +46,7 @@ class StickBreakingProcess(variable.Variable):
         log_likelihoods = [scipy.stats.beta.logpdf(x=b, a=1, b=self.alpha.value) for b in betas]
         return sum(log_likelihoods)
 
-    def resample(self, auxiliary: auxiliary_variable.AuxiliaryVariable) -> typing.Dict[states.State, float]:
+    def resample(self, auxiliary: "auxiliary_variable.AuxiliaryVariable") -> typing.Dict["states.State", float]:
         """Draw another realisation of the stick breaking process, according to the current conditional distribution.
 
         The conditional distribution is parametrised completely by the auxiliary variables, so these will govern the
@@ -63,7 +61,7 @@ class StickBreakingProcess(variable.Variable):
 
         """
         # extract aggregate auxiliary variables to get parameters of conditional distribution for beta
-        parameters = auxiliary.value_aggregated()
+        parameters: typing.Dict[states.State, typing.Union[int, float]] = dict(auxiliary.value_aggregated())
         parameters[states.AggregateState()] = self.alpha.value
 
         # resample using parameters of conditional distribution

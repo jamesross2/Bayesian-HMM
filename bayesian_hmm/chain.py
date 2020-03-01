@@ -5,9 +5,6 @@ It has methods to initialise the object, resample the latent states, and some co
 printing methods.
 """
 
-# Support typehinting.
-from __future__ import annotations
-
 import copy
 import random
 import typing
@@ -30,14 +27,14 @@ NestedInitDict = DictStrDictStrNum
 class Chain(object):
     """Store observed emission sequence and current latent sequence for a HMM."""
 
-    def __init__(self, sequence: typing.List[bayesian_model.State]) -> None:
+    def __init__(self, sequence: typing.Sequence[bayesian_model.State]) -> None:
         """Create a Hidden Markov Chain for an observed emission sequence.
 
         Args:
             sequence: An iterable containing observed emissions.
         """
         # initialise & store sequences
-        self.emission_sequence: typing.List[bayesian_model.State] = copy.deepcopy(sequence)
+        self.emission_sequence: typing.List[bayesian_model.State] = copy.deepcopy(list(sequence))
         self.latent_sequence: typing.List[bayesian_model.State] = [bayesian_model.AggregateState() for _ in sequence]
 
         # calculate dependent hyperparameters
@@ -78,7 +75,7 @@ class Chain(object):
             + ["..."],
         )
 
-    def tabulate(self) -> numpy.array:
+    def to_array(self) -> numpy.array:
         """Convert the latent and emission sequences into a single numpy array.
 
         Returns:
@@ -124,7 +121,10 @@ class Chain(object):
             transition_probabilities[self.latent_sequence[t]][self.latent_sequence[t + 1]] for t in range(self.T - 1)
         ]
         emission_likelihoods = [
-            emission_probabilities[self.latent_sequence[t]][self.emission_sequence[t]] for t in range(self.T)
+            emission_probabilities[self.latent_sequence[t]][self.emission_sequence[t]]
+            if not isinstance(self.emission_sequence[t], bayesian_model.MissingState)
+            else 1.0
+            for t in range(self.T)
         ]
         log_likelihoods = (
             numpy.log(starting_likelihood),
@@ -178,7 +178,11 @@ def resample_latent_sequence(
     p_history[0] = {
         s: (
             transition_probabilities[bayesian_model.StartingState()][s]
-            * emission_probabilities[s][emission_sequence[0]]
+            * (
+                emission_probabilities[s][emission_sequence[0]]
+                if not isinstance(emission_sequence[0], bayesian_model.MissingState)
+                else 1.0
+            )
             if starting_likelihood > auxiliary_vars[0]
             else 0
         )
@@ -190,7 +194,11 @@ def resample_latent_sequence(
         p_temp = {
             s2: (
                 sum(p_history[t - 1][s1] for s1 in states if transition_probabilities[s1][s2] > auxiliary_vars[t])
-                * emission_probabilities[s2][emission_sequence[t]]
+                * (
+                    emission_probabilities[s2][emission_sequence[t]]
+                    if not isinstance(emission_sequence[t], bayesian_model.MissingState)
+                    else 1.0
+                )
             )
             for s2 in states
         }

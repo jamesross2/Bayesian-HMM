@@ -149,6 +149,7 @@ class AuxiliaryVariable(variable.Variable):
 
         # fill in default values
         states_from = tuple(counts.keys())
+        states_to: typing.Tuple
         if len(states_from) == 0:
             states_to = tuple()
         else:
@@ -186,6 +187,7 @@ class AuxiliaryVariable(variable.Variable):
         """
         # fill in default values
         states_from = tuple(counts.keys())
+        states_to: typing.Tuple
         if len(states_from) == 0:
             states_to = tuple()
         else:
@@ -215,9 +217,10 @@ class AuxiliaryVariable(variable.Variable):
         """
         # fill in default values
         states_from = tuple(self.value.keys())
+        states_to: typing.Tuple
         if len(states_from) == 0:
             states_to = tuple()
         else:
-            states_to = self.value[states_from[0]].keys()
+            states_to = tuple(self.value[states_from[0]].keys())
 
         return {state_to: sum(self.value[state_from][state_to] for state_from in states_from) for state_to in states_to}
