@@ -15,6 +15,9 @@ setuptools.setup(
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7'
+        'Programming Language :: Python :: 3.8'
     ],
     install_requires=["scipy", "numpy", "terminaltables", "tqdm", "sympy"],
     test_suite="py.test",

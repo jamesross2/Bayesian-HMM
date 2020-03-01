@@ -148,7 +148,9 @@ class DirichletProcessFamily(variable.Variable):
         for state_from in states_from:
             values: typing.Sequence[float] = tuple(self.value[state_from][state_to] for state_to in states_to)
             values = utils.shrink_probabilities(values)
-            log_likelihoods[state_from] = scipy.stats.dirichlet.logpdf(values, parameters[state_from])
+            log_likelihoods[state_from] = scipy.stats.dirichlet.logpdf(
+                values, utils.shrink_probabilities(parameters[state_from])
+            )
 
         return sum(log_likelihoods.values())
 
