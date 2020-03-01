@@ -5,6 +5,6 @@ from .dirichlet_process_family import DirichletProcessFamily
 from .hierarchical_dirichlet_distribution import HierarchicalDirichletDistribution
 from .hierarchical_dirichlet_process import HierarchicalDirichletProcess
 from .hyperparameter import Hyperparameter
-from .states import AggregateState, StartingState, State
+from .states import AggregateState, MissingState, StartingState, State
 from .stick_breaking_process import StickBreakingProcess
 from .variable import Variable

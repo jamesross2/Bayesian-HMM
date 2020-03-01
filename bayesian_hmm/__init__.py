@@ -13,6 +13,7 @@ from .bayesian_model import (
     DirichletDistributionFamily,
     DirichletProcessFamily,
     HierarchicalDirichletProcess,
+    MissingState,
     StartingState,
     State,
     StickBreakingProcess,

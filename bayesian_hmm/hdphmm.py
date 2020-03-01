@@ -26,6 +26,7 @@ import functools
 import multiprocessing
 import string
 import typing
+import warnings
 
 import numpy
 import terminaltables
@@ -34,13 +35,6 @@ import tqdm
 from . import bayesian_model, utils
 from .bayesian_model import hyperparameter
 from .chain import Chain, resample_latent_sequence
-
-# Shorthand for numeric types.
-Numeric = typing.Union[int, float]
-
-# Oft-used dictionary initializations with shorthands.
-InitDict = typing.Dict[bayesian_model.State, Numeric]
-NestedInitDict = typing.Dict[bayesian_model.State, InitDict]
 
 
 # TODO: check docstring
@@ -154,8 +148,12 @@ class HDPHMM(object):
         # states & emissions
         if emissions is None:
             emissions = set(emission for chain in self.chains for emission in chain.emission_sequence)
+            emissions = emissions - {bayesian_model.states.MissingState()}
         elif not isinstance(emissions, set):
             raise ValueError("emissions must be a set")
+        elif bayesian_model.states.MissingState() in emissions:
+            warnings.warn("Removing MissingState from emissions.")
+            emissions = emissions - {bayesian_model.states.MissingState()}
         assert isinstance(emissions, set)
         self.emissions: typing.Set[bayesian_model.State] = emissions
         self.states: typing.Set[bayesian_model.State] = set()
@@ -218,7 +216,7 @@ class HDPHMM(object):
         """
         return len(self.emissions)
 
-    def tabulate(self) -> numpy.array:
+    def to_array(self) -> numpy.array:
         """Create a table containing the state label of every emission and chain.
 
         Convert the latent and emission sequences for all chains into a single numpy
@@ -232,7 +230,7 @@ class HDPHMM(object):
         """
         hmm_array = numpy.concatenate(
             tuple(
-                numpy.concatenate((numpy.array([[n] * self.chains[n].T]).T, self.chains[n].tabulate()), axis=1)
+                numpy.concatenate((numpy.array([[n] * self.chains[n].T]).T, self.chains[n].to_array()), axis=1)
                 for n in range(self.c)
             ),
             axis=0,
