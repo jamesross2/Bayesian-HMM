@@ -61,7 +61,7 @@ class StickBreakingProcess(variable.Variable):
 
         """
         # extract aggregate auxiliary variables to get parameters of conditional distribution for beta
-        parameters = auxiliary.value_aggregated()
+        parameters: typing.Dict[states.State, typing.Union[int, float]] = dict(auxiliary.value_aggregated())
         parameters[states.AggregateState()] = self.alpha.value
 
         # resample using parameters of conditional distribution

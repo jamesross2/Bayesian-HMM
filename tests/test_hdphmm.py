@@ -52,7 +52,7 @@ def test_sticky_initialisation():
     # check chain initialises correctly in both cases
     assert 0 <= hmm_sticky.transition_model.kappa.value <= 1
     assert hmm_sticky.transition_model.kappa.prior != (lambda: 0)
-    assert hmm_slippery.transition_model.kappa is None
+    assert isinstance(hmm_slippery.transition_model.kappa, bayesian_hmm.hyperparameter.Dummy)
 
     # check sticky is safe
     with pytest.raises(ValueError, match="must be type bool"):
@@ -90,5 +90,5 @@ def test_manual_priors():
     assert hmms["single"].transition_model.kappa.value > 0
     assert hmms["single"].emission_model.beta.value > 0
 
-    with pytest.raises(ValueError, match="kappa Hyperparameter is None."):
-        _ = bayesian_hmm.HDPHMM(emission_sequences, sticky=True, kappa=None)
+    with pytest.raises(ValueError, match="Hyperparameter kappa must be non-dummy for a sticky process."):
+        _ = bayesian_hmm.HDPHMM(emission_sequences, sticky=True, kappa=bayesian_hmm.hyperparameter.Dummy())

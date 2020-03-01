@@ -52,12 +52,12 @@ class HDPHMM(object):
 
     def __init__(
         self,
-        emission_sequences: typing.Iterable[typing.List[bayesian_model.State]],
+        emission_sequences: typing.Iterable[typing.Sequence[bayesian_model.State]],
         emissions: typing.Optional[typing.Set[bayesian_model.State]] = None,
         sticky: bool = True,
         alpha: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
         gamma: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=3, scale=3),
-        kappa: typing.Optional[bayesian_model.Hyperparameter] = hyperparameter.Beta(shape=1, scale=1),
+        kappa: bayesian_model.Hyperparameter = hyperparameter.Beta(shape=1, scale=1),
         beta_emission: bayesian_model.Hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
     ) -> None:
         """A fully non-parametric Bayesian hierarchical Dirichlet process hidden Markov model.
@@ -126,11 +126,14 @@ class HDPHMM(object):
         # sticky flag
         if type(sticky) is not bool:
             raise ValueError("`sticky` must be type bool")
-        if sticky and kappa is None:
-            raise ValueError("`sticky` is True but kappa Hyperparameter is None.")
-        self.sticky = sticky
+        elif sticky and isinstance(kappa, hyperparameter.Dummy):
+            raise ValueError("Hyperparameter kappa must be non-dummy for a sticky process.")
+        elif not sticky:
+            # replace kappa with None if the process is not sticky
+            kappa = hyperparameter.Dummy(0.0)
 
         # store raw hyperparameter values for convenience
+        self.sticky = sticky
         self.alpha: hyperparameter.Hyperparameter = alpha
         self.gamma: hyperparameter.Hyperparameter = gamma
         self.kappa: hyperparameter.Hyperparameter = kappa
@@ -145,15 +148,16 @@ class HDPHMM(object):
         self.emission_model = bayesian_model.HierarchicalDirichletDistribution(beta=self.beta_emission)
 
         # use internal properties to store aggregate statistics (used to update Bayesian variables efficiently)
-        self.emission_counts: NestedInitDict = {}
-        self.transition_counts: NestedInitDict = {}
+        self.emission_counts: typing.Dict[bayesian_model.State, typing.Dict[bayesian_model.State, int]] = {}
+        self.transition_counts: typing.Dict[bayesian_model.State, typing.Dict[bayesian_model.State, int]] = {}
 
         # states & emissions
         if emissions is None:
-            emissions = functools.reduce(set.union, (set(c.emission_sequence) for c in self.chains), set())
+            emissions = set(emission for chain in self.chains for emission in chain.emission_sequence)
         elif not isinstance(emissions, set):
             raise ValueError("emissions must be a set")
-        self.emissions = emissions
+        assert isinstance(emissions, set)
+        self.emissions: typing.Set[bayesian_model.State] = emissions
         self.states: typing.Set[bayesian_model.State] = set()
 
         # generate non-repeating character labels for latent states
@@ -242,7 +246,7 @@ class HDPHMM(object):
         fs = "bayesian_hmm.HDPHMM," + " ({C} chains, {K} states, {N} emissions, {Ob} observations)"
         return fs.format(C=self.c, K=self.k, N=self.n, Ob=sum(c.T for c in self.chains))
 
-    def state_generator(self) -> typing.Generator[str, None, None]:
+    def state_generator(self) -> typing.Generator[bayesian_model.State, None, None]:
         """Create a new state for the HDPHMM, and update all parameters accordingly.
 
         Yields:
@@ -311,7 +315,7 @@ class HDPHMM(object):
     def update_states(self):
         """Remove defunct states from transition and emission dynamics."""
         states_prev = self.states
-        states_next = set(sorted(functools.reduce(set.union, (set(c.latent_sequence) for c in self.chains), set())))
+        states_next = set(sorted(set(emission for chain in self.chains for emission in chain.latent_sequence)))
         states_removed = (states_prev - states_next) - {bayesian_model.AggregateState(), bayesian_model.StartingState()}
 
         # merge old probabilities into None
@@ -517,7 +521,7 @@ class HDPHMM(object):
 
         """
         # store hyperparameters in a single dict
-        results = {
+        results: typing.Dict[str, typing.List[typing.Any]] = {
             "state_count": list(),
             "loglikelihood": list(),
             "chain_loglikelihood": list(),

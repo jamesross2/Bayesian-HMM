@@ -16,20 +16,20 @@ class HierarchicalDirichletProcess(variable.Variable):
 
     def __init__(
         self,
-        sticky: bool = False,
-        alpha: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
-        gamma: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=3, scale=3),
-        kappa: typing.Optional[hyperparameter.Hyperparameter] = hyperparameter.Beta(shape=1, scale=1),
+        sticky: bool,
+        alpha: hyperparameter.Hyperparameter,
+        gamma: hyperparameter.Hyperparameter,
+        kappa: hyperparameter.Hyperparameter,
     ) -> None:
         """A non-parametric Bayesian hierarchical Dirichlet process.
 
         Args:
-            sticky: If False (the default), the usual model is created. If True, then an additional Hyperparameter
+            sticky: If False, the usual model is created. If True, then an additional Hyperparameter
                 `kappa` is created, which governs the self-transition probabilities within the transition probabilities.
             alpha: the Hyperparameter controlling the variability of the stick breaking process.
             gamma: the Hyperparameter controlling the sampling of new states in the Dirichlet stick breaking process.
             kappa: the Hyperparameter controlling the stickyness of the hierarchical Dirichlet process. If sticky is
-                False (the default), then this value is ignored.
+                False, then this value is ignored.
 
         Raises:
             ValueError: If the chain is sticky but not kappa hyperparameter is provided.
@@ -39,14 +39,16 @@ class HierarchicalDirichletProcess(variable.Variable):
         super(HierarchicalDirichletProcess, self).__init__()
 
         # replace kappa with None if the process is not sticky
-        if sticky and kappa is None:
-            raise ValueError("Hyperparameter kappa must be given for a sticky process.")
-        self.sticky: bool = sticky
-        self.kappa: typing.Optional[hyperparameter.Hyperparameter] = kappa if self.sticky else None
+        if sticky and isinstance(kappa, hyperparameter.Dummy):
+            raise ValueError("Hyperparameter kappa must be non-dummy for a sticky process.")
+        if not sticky:
+            kappa = hyperparameter.Dummy(0.0)
 
         # store hyperparameters
+        self.sticky: bool = sticky
         self.alpha: hyperparameter.Hyperparameter = alpha
         self.gamma: hyperparameter.Hyperparameter = gamma
+        self.kappa: hyperparameter.Hyperparameter = kappa
 
         # create all component distributions (beta, auxiliary variables, and final HDP)
         self.beta: stick_breaking_process.StickBreakingProcess
@@ -64,12 +66,13 @@ class HierarchicalDirichletProcess(variable.Variable):
                 sticky).
 
         """
+        # get components of log likelihood
         likelihoods = (
             self.alpha.log_likelihood(),
             self.gamma.log_likelihood(),
             self.beta.log_likelihood(),
             self.pi.log_likelihood(),
-            self.kappa.log_likelihood() if self.sticky else 0.0,
+            self.kappa.log_likelihood(),
         )
         return sum(likelihoods)
 
@@ -88,6 +91,7 @@ class HierarchicalDirichletProcess(variable.Variable):
         """
         # fill in default values
         states_from = tuple(counts.keys())
+        states_to: typing.Set[typing.Any]
         if len(states_from) == 0:
             states_to = set()
         else:
@@ -97,6 +101,7 @@ class HierarchicalDirichletProcess(variable.Variable):
         self.alpha.resample(posterior_log_likelihood=lambda x: self.beta.log_likelihood())
         self.gamma.resample(posterior_log_likelihood=lambda x: self.pi.log_likelihood())
         if self.sticky:
+            assert self.kappa is not None
             self.kappa.resample(posterior_log_likelihood=lambda x: self.pi.log_likelihood())
 
         # next, auxiliary variables require beta to have correct values

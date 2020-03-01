@@ -1,10 +1,13 @@
-import scipy.stats
-
 import bayesian_hmm
 
 
 def test_model_initialisation() -> None:
-    model = bayesian_hmm.HierarchicalDirichletProcess()
+    model = bayesian_hmm.HierarchicalDirichletProcess(
+        sticky=True,
+        alpha=bayesian_hmm.hyperparameter.Gamma(2, 2),
+        gamma=bayesian_hmm.hyperparameter.Gamma(3, 3),
+        kappa=bayesian_hmm.hyperparameter.Beta(1, 1),
+    )
     assert isinstance(model, bayesian_hmm.HierarchicalDirichletProcess)
     assert isinstance(model, bayesian_hmm.Variable)
 
@@ -13,7 +16,12 @@ def test_model_initialisation() -> None:
 
 def test_model_likelihood() -> None:
     # set alpha so that stick breaking process beta variables have a pdf strictly below 1
-    model = bayesian_hmm.HierarchicalDirichletProcess()
+    model = bayesian_hmm.HierarchicalDirichletProcess(
+        sticky=True,
+        alpha=bayesian_hmm.hyperparameter.Gamma(),
+        gamma=bayesian_hmm.hyperparameter.Gamma(),
+        kappa=bayesian_hmm.hyperparameter.Beta(),
+    )
     likelihood_init = model.log_likelihood()
     assert likelihood_init < 0
     assert model.log_likelihood() == model.alpha.log_likelihood() + model.gamma.log_likelihood()
@@ -34,6 +42,11 @@ def test_model_resampling() -> None:
     counts = {state0: {state1: 3 for state1 in states} for state0 in states}
 
     for sticky in (True, False):
-        model = bayesian_hmm.HierarchicalDirichletProcess(sticky=sticky)
+        model = bayesian_hmm.HierarchicalDirichletProcess(
+            sticky=sticky,
+            alpha=bayesian_hmm.hyperparameter.Gamma(),
+            gamma=bayesian_hmm.hyperparameter.Gamma(),
+            kappa=bayesian_hmm.hyperparameter.Beta(),
+        )
         _ = [model.add_state(state) for state in states if state != bayesian_hmm.AggregateState()]
         model.resample(counts=counts)

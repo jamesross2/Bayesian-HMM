@@ -27,14 +27,14 @@ NestedInitDict = DictStrDictStrNum
 class Chain(object):
     """Store observed emission sequence and current latent sequence for a HMM."""
 
-    def __init__(self, sequence: typing.List[bayesian_model.State]) -> None:
+    def __init__(self, sequence: typing.Sequence[bayesian_model.State]) -> None:
         """Create a Hidden Markov Chain for an observed emission sequence.
 
         Args:
             sequence: An iterable containing observed emissions.
         """
         # initialise & store sequences
-        self.emission_sequence: typing.List[bayesian_model.State] = copy.deepcopy(sequence)
+        self.emission_sequence: typing.List[bayesian_model.State] = copy.deepcopy(list(sequence))
         self.latent_sequence: typing.List[bayesian_model.State] = [bayesian_model.AggregateState() for _ in sequence]
 
         # calculate dependent hyperparameters

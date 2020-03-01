@@ -40,14 +40,16 @@ def test_initialisation() -> None:
 def test_stickiness() -> None:
     dirichlet_process_sticky = create_dirichlet_process()
     dirichlet_process_slippery = bayesian_hmm.DirichletProcessFamily(
-        beta=dirichlet_process_sticky.beta, gamma=dirichlet_process_sticky.gamma
+        beta=dirichlet_process_sticky.beta,
+        gamma=dirichlet_process_sticky.gamma,
+        kappa=bayesian_hmm.hyperparameter.Dummy(),
     )
 
     # check that stickiness works
     assert dirichlet_process_sticky.sticky
     assert not dirichlet_process_slippery.sticky
     assert isinstance(dirichlet_process_sticky.kappa, bayesian_hmm.hyperparameter.Hyperparameter)
-    assert dirichlet_process_slippery.kappa is None
+    assert isinstance(dirichlet_process_slippery.kappa, bayesian_hmm.hyperparameter.Dummy)
 
 
 def test_posterior_parameters() -> None:

@@ -71,6 +71,7 @@ class Hyperparameter(variable.Variable):
 
         if not force and posterior_log_likelihood is None:
             raise ValueError("Posterior likelihood required if force is False.")
+        assert posterior_log_likelihood is not None  # stop mypy errors
 
         # Metropolis Hastings resampling compares current likelihood to proposed likelihood
         value_initial = copy.deepcopy(self.value)
@@ -89,7 +90,7 @@ class Hyperparameter(variable.Variable):
 
 # common gamma Hyperparameter
 class Gamma(Hyperparameter):
-    def __init__(self, shape: int = 1, scale: int = 1) -> None:
+    def __init__(self, shape: float = 1, scale: float = 1) -> None:
         """A Gamma-distributed hyperparameter for a Bayesian model.
 
         Args:
@@ -105,7 +106,7 @@ class Gamma(Hyperparameter):
 
 # common beta Hyperparameter
 class Beta(Hyperparameter):
-    def __init__(self, shape: int = 1, scale: int = 1) -> None:
+    def __init__(self, shape: float = 1, scale: float = 1) -> None:
         """A Beta-distributed hyperparameter for a Bayesian model.
 
         Args:
@@ -117,3 +118,36 @@ class Beta(Hyperparameter):
         prior: typing.Callable[[], float] = lambda: scipy.stats.beta.rvs(a=shape, b=scale)
         log_likelihood: typing.Callable[[float], float] = lambda x: scipy.stats.beta.logpdf(x=x, a=shape, b=scale)
         super(Beta, self).__init__(prior, log_likelihood)
+
+
+class Dummy(Hyperparameter):
+    def __init__(self, value: typing.Union[int, float] = 0.0) -> None:
+        """A Hyperparameter that only takes a single value.
+
+        Args:
+            value: the value assumed by the Hyperparameter at all times
+
+        """
+        # get gamma prior and log likelihood functions
+        prior: typing.Callable[[], float] = lambda: value
+        log_likelihood: typing.Callable[[float], float] = lambda x: 0.0
+        super(Dummy, self).__init__(prior, log_likelihood)
+
+    def resample(
+        self,
+        posterior_log_likelihood: typing.Optional[typing.Callable[[typing.Union[float, int]], float]] = None,
+        force: bool = False,
+    ) -> typing.Union[float, int]:
+        """Simply return the dummy value of the Dummy Hyperparameter without any resampling.
+
+        All arguments are ignored, and left only for signature consistency.
+
+        Args:
+            posterior_log_likelihood: Ignored.
+            force: Ignored.
+
+        Returns:
+            The dummy value of the Hyperparameter.
+
+        """
+        return self.value

@@ -11,7 +11,9 @@ import typing
 
 import numpy as np
 
-import bayesian_hmm
+NumericIterable = typing.TypeVar(
+    "NumericIterable", typing.Dict[typing.Any, typing.Union[int, float]], typing.Sequence[typing.Union[int, float]]
+)
 
 
 # used to give human-friendly labels to states as they are created
@@ -40,7 +42,7 @@ def label_generator(labels: str = string.ascii_lowercase) -> typing.Generator[st
 
 # used to choose from new states after resampling latent states
 def dirichlet_process_generator(
-    alpha: typing.Union[int, float] = 1, output_generator: typing.Iterator[typing.Union[str, int]] = None
+    alpha: typing.Union[int, float] = 1, output_generator: typing.Union[typing.Iterator, typing.Generator] = None
 ) -> typing.Generator[typing.Union[str, int], None, None]:
     """Creates a generator object which yields subsequent draws from a single dirichlet process.
 
@@ -72,10 +74,12 @@ def max_dict(d: typing.Dict[str, typing.Union[int, float]], eps: float = 1e-8) -
     return {k: max(float(v), eps) for k, v in d.items()}
 
 
-def shrink_probabilities(d: typing.Iterable[float], eps: float = 1e-12) -> typing.Iterable[float]:
+def shrink_probabilities(d: NumericIterable, eps: float = 1e-12) -> NumericIterable:
     if isinstance(d, dict):
         denom = sum(d.values()) + len(d) * eps
         return {k: (float(v) + eps) / denom for k, v in d.items()}
     elif isinstance(d, tuple):
         denom = sum(d) + eps * len(d)
         return tuple((float(v) + eps) / denom for v in d)
+    else:
+        raise NotImplementedError("Unknown type {} cannot be shrunk.".format(type(d)))

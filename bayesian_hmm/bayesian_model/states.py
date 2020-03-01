@@ -2,6 +2,7 @@
 
 import collections
 import functools
+import numbers
 import typing
 
 
@@ -37,7 +38,14 @@ class State(object):
 
     def __lt__(self, other) -> bool:
         if isinstance(other, State):
-            return self.value < other.value
+            if (isinstance(self.value, numbers.Number) and isinstance(other.value, numbers.Number)) or (
+                isinstance(self.value, str) and isinstance(other.value, str)
+            ):
+                return self.value < other.value
+            else:
+                raise ValueError(
+                    "Cannot compare Symbol objects with types {} and {}".format(type(self.value), type(other.value))
+                )
         else:
             raise NotImplementedError("Cannot compare Symbol object to a {}".format(type(other)))
 

@@ -8,7 +8,7 @@ from . import dirichlet_distribution_family, hyperparameter, states, variable
 class HierarchicalDirichletDistribution(variable.Variable):
     """A non-parametric Bayesian hierarchical Dirichlet process."""
 
-    def __init__(self, beta: hyperparameter.Hyperparameter = hyperparameter.Beta(shape=2, scale=2)) -> None:
+    def __init__(self, beta: hyperparameter.Hyperparameter) -> None:
         """A non-parametric Bayesian hierarchical Dirichlet process.
 
         Args:

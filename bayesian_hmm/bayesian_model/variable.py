@@ -1,4 +1,5 @@
 import abc
+import typing
 
 
 class Variable(object, metaclass=abc.ABCMeta):
@@ -9,10 +10,10 @@ class Variable(object, metaclass=abc.ABCMeta):
         # self.value: typing.Union[int, float, None] = None
         pass
 
-    @abc.abstractmethod
-    def log_likelihood(self, *args):
-        raise NotImplementedError("Bayesian variables must implement a 'likelihood' method.")
-
-    @abc.abstractmethod
-    def resample(self, *args):
-        raise NotImplementedError("Bayesian variables must define a 'resample' method.")
+    # @abc.abstractmethod
+    # def log_likelihood(self, **kwargs) -> float:
+    #     raise NotImplementedError("Bayesian variables must implement a 'likelihood' method.")
+    #
+    # @abc.abstractmethod
+    # def resample(self, **kwargs) -> typing.Any:
+    #     raise NotImplementedError("Bayesian variables must define a 'resample' method.")
