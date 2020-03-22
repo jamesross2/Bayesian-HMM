@@ -8,7 +8,9 @@ advance.
 
 import warnings
 
-from .bayesian_model import (
+from .chain import Chain
+from .hdphmm import HDPHMM
+from .variables import (
     AggregateState,
     DirichletDistributionFamily,
     DirichletProcessFamily,
@@ -20,7 +22,5 @@ from .bayesian_model import (
     Variable,
     hyperparameter,
 )
-from .chain import Chain
-from .hdphmm import HDPHMM
 
 warnings.warn("bayesian_hmm is in beta testing and future versions may behave differently")

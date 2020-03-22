@@ -32,9 +32,9 @@ import numpy
 import terminaltables
 import tqdm
 
-from . import bayesian_model, utils
-from .bayesian_model import hyperparameter
+from . import utils, variables
 from .chain import Chain, resample_latent_sequence
+from .variables import hyperparameter
 
 
 # TODO: check docstring
@@ -46,13 +46,13 @@ class HDPHMM(object):
 
     def __init__(
         self,
-        emission_sequences: typing.Iterable[typing.Sequence[bayesian_model.State]],
-        emissions: typing.Optional[typing.Set[bayesian_model.State]] = None,
+        emission_sequences: typing.Iterable[typing.Sequence[variables.State]],
+        emissions: typing.Optional[typing.Set[variables.State]] = None,
         sticky: bool = True,
         alpha: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
         gamma: hyperparameter.Hyperparameter = hyperparameter.Gamma(shape=3, scale=3),
-        kappa: bayesian_model.Hyperparameter = hyperparameter.Beta(shape=1, scale=1),
-        beta_emission: bayesian_model.Hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
+        kappa: variables.Hyperparameter = hyperparameter.Beta(shape=1, scale=1),
+        beta_emission: variables.Hyperparameter = hyperparameter.Gamma(shape=2, scale=2),
     ) -> None:
         """A fully non-parametric Bayesian hierarchical Dirichlet process hidden Markov model.
 
@@ -134,34 +134,34 @@ class HDPHMM(object):
         self.beta_emission: hyperparameter.Hyperparameter = beta_emission
 
         # create a hierarchical Dirichlet process model to store the Bayesian transition dynamics
-        self.transition_model: bayesian_model.HierarchicalDirichletProcess
-        self.emission_model: bayesian_model.HierarchicalDirichletDistribution
-        self.transition_model = bayesian_model.HierarchicalDirichletProcess(
+        self.transition_model: variables.HierarchicalDirichletProcess
+        self.emission_model: variables.HierarchicalDirichletDistribution
+        self.transition_model = variables.HierarchicalDirichletProcess(
             sticky=self.sticky, alpha=self.alpha, gamma=self.gamma, kappa=self.kappa
         )
-        self.emission_model = bayesian_model.HierarchicalDirichletDistribution(beta=self.beta_emission)
+        self.emission_model = variables.HierarchicalDirichletDistribution(beta=self.beta_emission)
 
         # use internal properties to store aggregate statistics (used to update Bayesian variables efficiently)
-        self.emission_counts: typing.Dict[bayesian_model.State, typing.Dict[bayesian_model.State, int]] = {}
-        self.transition_counts: typing.Dict[bayesian_model.State, typing.Dict[bayesian_model.State, int]] = {}
+        self.emission_counts: typing.Dict[variables.State, typing.Dict[variables.State, int]] = {}
+        self.transition_counts: typing.Dict[variables.State, typing.Dict[variables.State, int]] = {}
 
         # states & emissions
         if emissions is None:
             emissions = set(emission for chain in self.chains for emission in chain.emission_sequence)
-            emissions = emissions - {bayesian_model.states.MissingState()}
+            emissions = emissions - {variables.states.MissingState()}
         elif not isinstance(emissions, set):
             raise ValueError("emissions must be a set")
-        elif bayesian_model.states.MissingState() in emissions:
+        elif variables.states.MissingState() in emissions:
             warnings.warn("Removing MissingState from emissions.")
-            emissions = emissions - {bayesian_model.states.MissingState()}
+            emissions = emissions - {variables.states.MissingState()}
         assert isinstance(emissions, set)
-        self.emissions: typing.Set[bayesian_model.State] = emissions
-        self.states: typing.Set[bayesian_model.State] = set()
+        self.emissions: typing.Set[variables.State] = emissions
+        self.states: typing.Set[variables.State] = set()
 
         # generate non-repeating character labels for latent states
         self._label_generator = utils.label_generator(string.ascii_lowercase)
 
-        # keep flag to track initialisation
+        # flags to store initialisation and memoisation checks
         self._initialised = False
 
     @property
@@ -175,7 +175,7 @@ class HDPHMM(object):
         return self._initialised
 
     @initialised.setter
-    def initialised(self, value: typing.Any) -> None:
+    def initialised(self, value: bool) -> None:
         if value:
             raise AssertionError("HDPHMM must be initialised through initialise method")
         elif not value:
@@ -244,7 +244,7 @@ class HDPHMM(object):
         fs = "bayesian_hmm.HDPHMM," + " ({C} chains, {K} states, {N} emissions, {Ob} observations)"
         return fs.format(C=self.c, K=self.k, N=self.n, Ob=sum(c.T for c in self.chains))
 
-    def state_generator(self) -> typing.Generator[bayesian_model.State, None, None]:
+    def state_generator(self) -> typing.Generator[variables.State, None, None]:
         """Create a new state for the HDPHMM, and update all parameters accordingly.
 
         Yields:
@@ -254,7 +254,7 @@ class HDPHMM(object):
         while True:
             # make a state with a new label
             label = next(self._label_generator)
-            state = bayesian_model.State(label)
+            state = variables.State(label)
             self.states.add(state)
 
             # add the state to the hierarchical process
@@ -284,7 +284,7 @@ class HDPHMM(object):
         """
         # create as many states as needed
         labels = [next(self._label_generator) for _ in range(k)]
-        states = {bayesian_model.State(label) for label in labels}
+        states = {variables.State(label) for label in labels}
         self.states.update(states)
 
         # initialise chains
@@ -314,7 +314,7 @@ class HDPHMM(object):
         """Remove defunct states from transition and emission dynamics."""
         states_prev = self.states
         states_next = set(sorted(set(emission for chain in self.chains for emission in chain.latent_sequence)))
-        states_removed = (states_prev - states_next) - {bayesian_model.AggregateState(), bayesian_model.StartingState()}
+        states_removed = (states_prev - states_next) - {variables.AggregateState(), variables.StartingState()}
 
         # merge old probabilities into None
         for state in states_removed:
@@ -349,15 +349,13 @@ class HDPHMM(object):
 
         # transition count for non-oracle transitions
         emission_counts = {s: {e: 0 for e in self.emissions} for s in self.states}
-        transition_counts = {
-            s1: {s2: 0 for s2 in self.states} for s1 in self.states.union({bayesian_model.StartingState()})
-        }
+        transition_counts = {s1: {s2: 0 for s2 in self.states} for s1 in self.states.union({variables.StartingState()})}
 
         # increment all relevant hyperparameters while looping over sequence
         for chain in self.chains:
             # increment transition from special starting state
             if chain.T > 0:
-                transition_counts[bayesian_model.StartingState()][chain.latent_sequence[0]] += 1
+                transition_counts[variables.StartingState()][chain.latent_sequence[0]] += 1
 
             # increment all transitions and emissions within chain
             for t in range(chain.T - 1):
@@ -389,10 +387,10 @@ class HDPHMM(object):
         emissions.insert(0, ["S_i \\ E_i"] + list(map(str, self.emissions)))
         transitions = [
             [str(s1)] + [str(round(self.transition_model.pi.value[s1][s2], digits)) for s2 in self.states]
-            for s1 in self.states.union({bayesian_model.StartingState()})
+            for s1 in self.states.union({variables.StartingState()})
         ]
         transitions.insert(
-            0, ["S_i \\ S_j"] + list(map(lambda x: str(x), self.states.union({bayesian_model.StartingState()})))
+            0, ["S_i \\ S_j"] + list(map(lambda x: str(x), self.states.union({variables.StartingState()})))
         )
 
         # format tables
@@ -438,7 +436,7 @@ class HDPHMM(object):
         )
         return sum(log_likelihoods)
 
-    def resample_chains(self, ncores=1):
+    def resample_chains(self, ncores: int = 1):
         """Resample the latent states in all chains.
 
         This uses Beam sampling to improve the resampling time.
@@ -448,33 +446,46 @@ class HDPHMM(object):
 
         """
         # extract probabilities
-        p_emission, p_transition = (self.emission_model.pi.value, self.transition_model.pi.value)
-
-        # create temporary function for mapping
-        resample_partial = functools.partial(
-            resample_latent_sequence,
-            states=self.states,
-            emission_probabilities=copy.deepcopy(p_emission),
-            transition_probabilities=copy.deepcopy(p_transition),
+        p_emission, p_transition = (
+            copy.deepcopy(self.emission_model.pi.value),
+            copy.deepcopy(self.transition_model.pi.value),
         )
 
-        # parallel process resamples
-        pool = multiprocessing.Pool(processes=ncores)
-        new_latent_sequences = pool.map(
-            resample_partial, ((chain.emission_sequence, chain.latent_sequence) for chain in self.chains)
-        )
-        pool.close()
+        # separate multi- and single-process versions for better profiling, etc
+        if ncores > 1:
+            # create temporary function for mapping
+            resample_partial = functools.partial(
+                resample_latent_sequence,
+                states=self.states,
+                emission_probabilities=p_emission,
+                transition_probabilities=p_transition,
+            )
 
-        # assign returned latent sequences back to Chains
-        for i in range(self.c):
-            self.chains[i].latent_sequence = new_latent_sequences[i]
+            # parallel process resamples
+            pool = multiprocessing.Pool(processes=ncores)
+            new_latent_sequences = pool.map(
+                resample_partial, ((chain.emission_sequence, chain.latent_sequence) for chain in self.chains)
+            )
+            pool.close()
+
+            # assign returned latent sequences back to Chains
+            for i in range(self.c):
+                self.chains[i].latent_sequence = new_latent_sequences[i]
+        else:
+            for chain in self.chains:
+                chain.resample(
+                    states=self.states, emission_probabilities=p_emission, transition_probabilities=p_transition
+                )
 
         # update chains using results
         state_generator = utils.dirichlet_process_generator(
             alpha=self.transition_model.alpha.value, output_generator=self.state_generator()
         )
         for chain in self.chains:
-            chain.latent_sequence = [s if s.value is not None else next(state_generator) for s in chain.latent_sequence]
+            chain.latent_sequence = [
+                s if not isinstance(s, variables.AggregateState) else next(state_generator)
+                for s in chain.latent_sequence
+            ]
 
         # update counts
         self.update_states()
@@ -539,9 +550,6 @@ class HDPHMM(object):
             self.emission_model.resample(counts=self.emission_counts)
             self.transition_model.resample(counts=self.transition_counts)
 
-            # update computation-heavy statistics
-            likelihood_curr = self.log_likelihood()
-
             # print iteration summary if required
             if verbose:
                 if i == burn_in:
@@ -550,7 +558,7 @@ class HDPHMM(object):
                 states_added = self.states - states_prev
                 msg = [
                     "Iter: {}".format(i),
-                    "Likelihood: {0:.1f}".format(likelihood_curr),
+                    "Likelihood: {0:.1f}".format(self.log_likelihood()),
                     "states: {}".format(len(self.states)),
                 ]
                 if len(states_added) > 0:
@@ -563,14 +571,14 @@ class HDPHMM(object):
             if i >= burn_in and i % save_every == 0:
                 # save new data
                 results["state_count"].append(self.k)
-                results["loglikelihood"].append(likelihood_curr)
+                results["loglikelihood"].append(self.log_likelihood())
                 results["chain_loglikelihood"].append(sum(self.chain_log_likelihoods()))
                 results["hyperparameters"].append(
                     (
                         self.emission_model.beta.value,
                         self.transition_model.alpha.value,
                         self.transition_model.gamma.value,
-                        self.transition_model.kappa.value if self.sticky else None,
+                        self.transition_model.kappa.value,
                     )
                 )
                 results["beta_emission"].append(copy.deepcopy(self.emission_model.beta.value))

@@ -47,23 +47,22 @@ def test_chain_resample_transition():
 
     # specify deterministic latent probabilities
     p_emission = {s: {e: 1 / len(set(emissions)) for e in emissions} for s in states}
-    p_transition = {s1: {s2: 0 for s2 in states} for s1 in states + [bayesian_hmm.StartingState()]}
+    p_transition = {s1: {s2: 1e-3 for s2 in states} for s1 in states + [bayesian_hmm.StartingState()]}
     p_transition[bayesian_hmm.StartingState()][states[0]] = 1
     for i in range(len(states)):
-        p_transition[states[i]][states[(i + 1) % len(states)]] = 1
+        p_transition[states[i]][states[(i + 1) % len(states)]] = 1 - 1e-3 * (len(states) - 1)
 
     # degenerate starting and transition probabilities force the given latent sequence
     latent_sequence_resampled = [states[i % len(states)] for i in range(len(emissions))]
 
     # initialise chain with single emission state
     chain = bayesian_hmm.Chain(emissions)
-    chain.initialise({states[0]})
-    assert all(s == states[0] for s in chain.latent_sequence)
+    chain.initialise(set(states))
+    assert all(s in states for s in chain.latent_sequence)
 
-    # resample latent series
-    chain.latent_sequence = bayesian_hmm.chain.resample_latent_sequence(
-        (chain.emission_sequence, chain.latent_sequence), set(states), p_emission, p_transition
-    )
+    # resample latent series (several resampling steps may be required)
+    for _ in range(50):
+        chain.resample(set(states), p_emission, p_transition)
 
     # check that engineered latent structure holds
     assert list(chain.latent_sequence) == list(latent_sequence_resampled)
@@ -72,7 +71,7 @@ def test_chain_resample_transition():
 def test_chain_resample_emission():
     """Check that resampled latent sequence conforms to deterministic emission structure."""
     # specify starting emission sequence
-    len_init = 1
+    len_init = 10
     emissions = [bayesian_hmm.State("e" + str(x)) for x in range(len_init)]
     states = [bayesian_hmm.State("s" + str(x)) for x in range(2 * len_init)]
 
@@ -90,9 +89,8 @@ def test_chain_resample_emission():
     assert all(s in states for s in chain.latent_sequence)
 
     # resample latent series
-    chain.latent_sequence = bayesian_hmm.chain.resample_latent_sequence(
-        (chain.emission_sequence, chain.latent_sequence), set(states), p_emission, p_transition
-    )
+    for _ in range(50):
+        chain.resample(set(states), p_emission, p_transition)
 
     # check that engineered latent structure holds
     assert all(chain.latent_sequence[x] == latent_sequence_resampled[x] for x in range(len(chain)))

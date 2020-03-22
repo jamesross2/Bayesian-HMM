@@ -11,15 +11,15 @@ import typing
 
 import numpy
 
-from . import bayesian_model
+from . import variables
 
 # Shorthand for numeric types.
 Numeric = typing.Union[int, float]
 
 # Oft-used dictionary initializations with shorthands.
-DictStrNum = typing.Dict[bayesian_model.State, Numeric]
+DictStrNum = typing.Dict[variables.State, Numeric]
 InitDict = DictStrNum
-DictStrDictStrNum = typing.Dict[bayesian_model.State, DictStrNum]
+DictStrDictStrNum = typing.Dict[variables.State, DictStrNum]
 NestedInitDict = DictStrDictStrNum
 
 
@@ -27,15 +27,15 @@ NestedInitDict = DictStrDictStrNum
 class Chain(object):
     """Store observed emission sequence and current latent sequence for a HMM."""
 
-    def __init__(self, sequence: typing.Sequence[bayesian_model.State]) -> None:
+    def __init__(self, sequence: typing.Sequence[variables.State]) -> None:
         """Create a Hidden Markov Chain for an observed emission sequence.
 
         Args:
             sequence: An iterable containing observed emissions.
         """
         # initialise & store sequences
-        self.emission_sequence: typing.List[bayesian_model.State] = copy.deepcopy(list(sequence))
-        self.latent_sequence: typing.List[bayesian_model.State] = [bayesian_model.AggregateState() for _ in sequence]
+        self.emission_sequence: typing.List[variables.State] = copy.deepcopy(list(sequence))
+        self.latent_sequence: typing.List[variables.State] = [variables.AggregateState() for _ in sequence]
 
         # calculate dependent hyperparameters
         self.T = len(self.emission_sequence)
@@ -86,7 +86,7 @@ class Chain(object):
         )
 
     # introduce randomly sampled states for all latent variables in Chain
-    def initialise(self, states: typing.Set[bayesian_model.State]) -> None:
+    def initialise(self, states: typing.Set[variables.State]) -> None:
         """Initialise the chain by sampling latent states.
 
         Args:
@@ -116,13 +116,13 @@ class Chain(object):
 
         # get probability of transition & of emission, at start and remaining time steps
         # np.prod([])==1, so this is safe
-        starting_likelihood = transition_probabilities[bayesian_model.StartingState()][self.latent_sequence[0]]
+        starting_likelihood = transition_probabilities[variables.StartingState()][self.latent_sequence[0]]
         transition_likelihoods = [
             transition_probabilities[self.latent_sequence[t]][self.latent_sequence[t + 1]] for t in range(self.T - 1)
         ]
         emission_likelihoods = [
             emission_probabilities[self.latent_sequence[t]][self.emission_sequence[t]]
-            if not isinstance(self.emission_sequence[t], bayesian_model.MissingState)
+            if not isinstance(self.emission_sequence[t], variables.MissingState)
             else 1.0
             for t in range(self.T)
         ]
@@ -133,13 +133,27 @@ class Chain(object):
         )
         return sum(log_likelihoods)
 
+    def resample(
+        self,
+        states: typing.Set[variables.State],
+        emission_probabilities: NestedInitDict,
+        transition_probabilities: NestedInitDict,
+    ) -> None:
+        resampled_latent_sequence = resample_latent_sequence(
+            sequences=(self.emission_sequence, self.latent_sequence),
+            states=states,
+            emission_probabilities=emission_probabilities,
+            transition_probabilities=transition_probabilities,
+        )
+        self.latent_sequence = resampled_latent_sequence
+
 
 def resample_latent_sequence(
-    sequences: typing.Tuple[typing.List[bayesian_model.State], typing.List[bayesian_model.State]],
-    states: typing.Set[bayesian_model.State],
+    sequences: typing.Tuple[typing.List[variables.State], typing.List[variables.State]],
+    states: typing.Set[variables.State],
     emission_probabilities: NestedInitDict,
     transition_probabilities: NestedInitDict,
-) -> typing.List[bayesian_model.State]:
+) -> typing.List[variables.State]:
     """Resample the latent sequence of a Chain.
 
     This is usually called by another method or class, rather than directly. It
@@ -165,60 +179,61 @@ def resample_latent_sequence(
         return []
 
     # sample auxiliary beam variables
-    starting_likelihood = transition_probabilities[bayesian_model.StartingState()][latent_sequence[0]]
-    transition_likelihood = [starting_likelihood] + [
+    starting_likelihood = transition_probabilities[variables.StartingState()][latent_sequence[0]]
+    transition_likelihoods = [
         transition_probabilities[latent_sequence[t]][latent_sequence[t + 1]] for t in range(seqlen - 1)
     ]
-    auxiliary_vars = [numpy.random.uniform(0, p) for p in transition_likelihood]
+    auxiliary_vars = [numpy.random.uniform(0, p) for p in [starting_likelihood] + transition_likelihoods]
 
     # initialise historical P(s_t | u_{1:t}, y_{1:t}) and latent sequence
-    p_history: typing.List[typing.Dict[bayesian_model.State, Numeric]] = [dict()] * seqlen
+    p_history: typing.List[typing.Dict[variables.State, Numeric]] = [dict()] * seqlen
 
     # compute probability of state t (currently the starting state t==0)
     p_history[0] = {
         s: (
-            transition_probabilities[bayesian_model.StartingState()][s]
-            * (
-                emission_probabilities[s][emission_sequence[0]]
-                if not isinstance(emission_sequence[0], bayesian_model.MissingState)
-                else 1.0
-            )
-            if starting_likelihood > auxiliary_vars[0]
-            else 0
+            transition_probabilities[variables.StartingState()][s]
+            * (emission_probabilities[s].get(emission_sequence[0], 1.0))
         )
         for s in states
+        if starting_likelihood >= auxiliary_vars[0]
     }
 
     # for remaining states, probabilities are function of emission and transition
     for t in range(1, seqlen):
-        p_temp = {
-            s2: (
-                sum(p_history[t - 1][s1] for s1 in states if transition_probabilities[s1][s2] > auxiliary_vars[t])
-                * (
-                    emission_probabilities[s2][emission_sequence[t]]
-                    if not isinstance(emission_sequence[t], bayesian_model.MissingState)
-                    else 1.0
-                )
+        # fill in states with positive probability
+        previous_states = p_history[t - 1].keys()
+        auxiliary_var = auxiliary_vars[t]
+        p_temp = dict()
+        for s2 in states:
+            previous_states_valid = [s1 for s1 in previous_states if transition_probabilities[s1][s2] >= auxiliary_var]
+            p_temp[s2] = sum(p_history[t - 1][s1] for s1 in previous_states_valid) * emission_probabilities[s2].get(
+                emission_sequence[t], 1.0
             )
-            for s2 in states
-        }
-        p_temp_total = sum(p_temp.values())
-        p_history[t] = {s: p_temp[s] / p_temp_total for s in states}
+
+        # rescale to valid probabilities
+        prob_total = sum(p_temp.values())
+        p_history[t] = {state: prob / prob_total for state, prob in p_temp.items()}
 
     # overwrite latent sequence from end backwards
-    latent_sequence[seqlen - 1] = random.choices(
-        tuple(p_history[seqlen - 1].keys()), weights=tuple(p_history[seqlen - 1].values()), k=1
-    )[0]
+    latent_sequence[seqlen - 1] = numpy.random.choice(
+        tuple(p_history[seqlen - 1].keys()), p=tuple(p_history[seqlen - 1].values())
+    )
 
     # work backwards to compute new latent sequence
     for t in range(seqlen - 2, -1, -1):
-        p_temp = {
-            s1: p_history[t][s1] * transition_probabilities[s1][latent_sequence[t + 1]]
-            if transition_probabilities[s1][latent_sequence[t + 1]] > auxiliary_vars[t + 1]
-            else 0
-            for s1 in states
-        }
-        latent_sequence[t] = random.choices(tuple(p_temp.keys()), weights=tuple(p_temp.values()), k=1)[0]
+        # fill in states from possibilities, and such that next transition is feasible with current auxiliary variables
+        current_states = p_history[t].keys()
+        next_state = latent_sequence[t + 1]
+        auxiliary_var = auxiliary_vars[t + 1]
+        p_temp = dict()
+        for s1 in current_states:
+            if transition_probabilities[s1][next_state] > auxiliary_var:
+                p_temp[s1] = p_history[t][s1] * transition_probabilities[s1][next_state]
+
+        # sample a latent state from the valid options
+        prob_total = sum(p_temp.values())
+        probs = {state: prob / prob_total for state, prob in p_temp.items()}
+        latent_sequence[t] = numpy.random.choice(tuple(probs.keys()), p=tuple(probs.values()))
 
     # latent sequence now completely filled
     return latent_sequence
