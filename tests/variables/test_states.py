@@ -1,3 +1,5 @@
+import itertools
+
 import numpy
 import pytest
 
@@ -46,3 +48,24 @@ def test_comparisons() -> None:
     symbol_low = bayesian_hmm.State(-numpy.Inf)
 
     assert symbol_low < symbol1 < symbol_high
+
+
+def test_special_stats() -> None:
+    symbol_basic = bayesian_hmm.State(1)
+    symbol_start = bayesian_hmm.StartingState()
+    symbol_aggr = bayesian_hmm.AggregateState()
+    symbol_miss = bayesian_hmm.MissingState()
+    symbols = (symbol_basic, symbol_start, symbol_aggr, symbol_miss)
+
+    # special flag works
+    assert not symbol_basic.special
+    for symbol in (symbol_start, symbol_aggr, symbol_miss):
+        assert symbol.special
+
+    # no states are equal
+    for state1, state2 in itertools.combinations(symbols, 2):
+        assert state1 != state2
+
+    # all states hashable
+    for state in symbols:
+        assert isinstance(hash(state), int)

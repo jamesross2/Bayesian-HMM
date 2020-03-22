@@ -11,13 +11,14 @@ import typing
 
 import numpy as np
 
-NumericIterable = typing.TypeVar(
-    "NumericIterable", typing.Dict[typing.Any, typing.Union[int, float]], typing.Sequence[typing.Union[int, float]]
+NumericIterableType = typing.TypeVar(
+    "NumericIterableType", typing.Dict[typing.Any, typing.Union[int, float]], typing.Sequence[typing.Union[int, float]]
 )
+IteratorOutputType = typing.TypeVar("IteratorOutputType", int, typing.Any)
 
 
 # used to give human-friendly labels to states as they are created
-def label_generator(labels: str = string.ascii_lowercase) -> typing.Generator[str, None, None]:
+def label_generator(labels: typing.Sequence[str] = string.ascii_lowercase) -> typing.Generator[str, None, None]:
     """Generate a non-repeating and intuitively incrementing series of labels.
 
     Args:
@@ -42,8 +43,8 @@ def label_generator(labels: str = string.ascii_lowercase) -> typing.Generator[st
 
 # used to choose from new states after resampling latent states
 def dirichlet_process_generator(
-    alpha: typing.Union[int, float] = 1, output_generator: typing.Union[typing.Iterator, typing.Generator] = None
-) -> typing.Generator[typing.Union[str, int], None, None]:
+    alpha: typing.Union[int, float] = 1, output_generator: typing.Optional[typing.Iterator[IteratorOutputType]] = None
+) -> typing.Iterator[IteratorOutputType]:
     """Creates a generator object which yields subsequent draws from a single dirichlet process.
 
     Args:
@@ -74,7 +75,7 @@ def max_dict(d: typing.Dict[str, typing.Union[int, float]], eps: float = 1e-8) -
     return {k: max(float(v), eps) for k, v in d.items()}
 
 
-def shrink_probabilities(d: NumericIterable, eps: float = 1e-12) -> NumericIterable:
+def shrink_probabilities(d: NumericIterableType, eps: float = 1e-12) -> NumericIterableType:
     if isinstance(d, dict):
         denom = sum(d.values()) + len(d) * eps
         return {k: (float(v) + eps) / denom for k, v in d.items()}

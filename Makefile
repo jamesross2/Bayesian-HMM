@@ -20,6 +20,7 @@ help:
 	@echo "    pytest: Run pytest suite."
 	@echo "    test: Run all tests."
 	@echo "    format: Apply all formatting tools."
+	@echo "    profile: Run cProfile on the MCMC example and print longest running functions."
 	@echo "    tox: Run tox testing."
 	@echo "    release: Build and upload to PyPI."
 
@@ -81,6 +82,10 @@ pytest:
 test: clean-pyc isort-test darglint-test black-test mypy-test pytest
 
 format: clean-pyc isort black stubs
+
+profile:
+	python -m cProfile -o .profile.txt "$(TEST_DIRECTORY)/example.py"
+	python -c "import pstats; s = pstats.Stats('.profile.txt'); print(s.strip_dirs().sort_stats('cumtime').print_stats(20))"
 
 tox:
 	tox

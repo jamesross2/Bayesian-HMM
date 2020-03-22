@@ -5,13 +5,13 @@ import pytest
 import scipy.stats
 
 import bayesian_hmm
-import bayesian_hmm.bayesian_model
+import bayesian_hmm.variables
 
 
-def create_auxiliary_var(prior=lambda: 3, log_likelihood=lambda x: 0) -> bayesian_hmm.bayesian_model.AuxiliaryVariable:
+def create_auxiliary_var(prior=lambda: 3, log_likelihood=lambda x: 0) -> bayesian_hmm.variables.AuxiliaryVariable:
     alpha = bayesian_hmm.hyperparameter.Hyperparameter(prior=prior, log_likelihood=log_likelihood)
     beta = bayesian_hmm.StickBreakingProcess(alpha=alpha)
-    auxiliary_variable = bayesian_hmm.bayesian_model.AuxiliaryVariable(alpha=alpha, beta=beta)
+    auxiliary_variable = bayesian_hmm.variables.AuxiliaryVariable(alpha=alpha, beta=beta)
     return auxiliary_variable
 
 
@@ -38,13 +38,13 @@ def test_single_log_likelihood() -> None:
     scale = 0.5
     count = 10
     vals_exact = [
-        bayesian_hmm.bayesian_model.AuxiliaryVariable.single_variable_log_likelihood(
+        bayesian_hmm.variables.AuxiliaryVariable.single_variable_log_likelihood(
             scale=scale, value=x, count=count, exact=True
         )
         for x in range(1, count + 1)
     ]
     vals_approx = [
-        bayesian_hmm.bayesian_model.AuxiliaryVariable.single_variable_log_likelihood(
+        bayesian_hmm.variables.AuxiliaryVariable.single_variable_log_likelihood(
             scale=scale, value=x, count=count, exact=False
         )
         for x in range(1, count + 1)
@@ -58,9 +58,7 @@ def test_single_log_likelihood() -> None:
     assert max(abs(numpy.log(x / y)) for x, y in zip(vals_exact, vals_approx)) < 2
 
     # rejects bad input
-    assert (
-        bayesian_hmm.bayesian_model.AuxiliaryVariable.single_variable_resample(scale=scale, count=0, exact=False) == 1
-    )
+    assert bayesian_hmm.variables.AuxiliaryVariable.single_variable_resample(scale=scale, count=0, exact=False) == 1
 
 
 def test_single_variable_resample() -> None:
@@ -71,9 +69,7 @@ def test_single_variable_resample() -> None:
     # test exact and approximation separately
     for exact in (True, False):
         tests = tuple(
-            bayesian_hmm.bayesian_model.AuxiliaryVariable.single_variable_resample(
-                scale=scale, count=count, exact=exact
-            )
+            bayesian_hmm.variables.AuxiliaryVariable.single_variable_resample(scale=scale, count=count, exact=exact)
             for _ in range(sample_count)
         )
 
@@ -88,7 +84,7 @@ def test_single_variable_resample() -> None:
 
     # force overflow error with high count
     _ = [
-        bayesian_hmm.bayesian_model.AuxiliaryVariable.single_variable_resample(scale=s, count=n, exact=True)
+        bayesian_hmm.variables.AuxiliaryVariable.single_variable_resample(scale=s, count=n, exact=True)
         for s in (0.01, 0.1, 1, 10, 100)
         for n in (1, 10, 100, 1000)
     ]
