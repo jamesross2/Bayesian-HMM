@@ -11,8 +11,8 @@ def viterbi(observations, states, start_p, trans_p, emit_p) -> np.ndarray:
     # I.e., removing the `enumerate()`s.
 
     # Pre-allocate matrices for T1, T2.
-    T1 = np.empty((len(states), len(observations)), dtype=np.float)
-    T2 = np.empty((len(states), len(observations)), dtype=np.float)
+    T1 = np.empty((len(states), len(observations)), dtype=np.float64)
+    T2 = np.empty((len(states), len(observations)), dtype=np.float64)
 
     # Initialize states.
     for i, state in enumerate(states):
@@ -32,8 +32,10 @@ def viterbi(observations, states, start_p, trans_p, emit_p) -> np.ndarray:
             T2[i, j] = np.argmax(candidates)
 
     # Step back through the calculations and find the most likely sequence.
-    Z = np.empty((len(observations),), dtype=np.float)
-    X = np.empty((len(observations),), dtype=str)
+    Z = np.empty((len(observations),), dtype=np.int)
+    X = np.empty(
+        (len(observations),), dtype=np.dtype("U100")
+    )  # States are Unicode strings with length at most 100.
 
     Z[-1] = np.argmax(T1[:, -1])
     X[-1] = states[int(Z[-1])]
