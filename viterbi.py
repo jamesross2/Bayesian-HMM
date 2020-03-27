@@ -20,7 +20,7 @@ def viterbi(observations, states, start_p, trans_p, emit_p) -> np.ndarray:
         T2[i, 0] = 0.0
 
     # Intermediate states.
-    for j, obs in enumerate(observations[1:]):
+    for j, obs in enumerate(observations[1:], start=1):
         for i, state in enumerate(states):
 
             # TODO: think about using a tee and a generator here for long/memory-intensive sequences.
