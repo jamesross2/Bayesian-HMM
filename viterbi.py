@@ -38,10 +38,10 @@ def viterbi(observations, states, start_p, trans_p, emit_p) -> np.ndarray:
     )  # States are Unicode strings with length at most 100.
 
     Z[-1] = np.argmax(T1[:, -1])
-    X[-1] = states[int(Z[-1])]
-    for j in range(len(observations) - 1, 0, -1):  # FIX: ugly use of `range()`.
-        Z[j - 1] = T2[int(Z[j]), j]
-        X[j - 1] = states[int(Z[j - 1])]
+    X[-1] = states[Z[-1]]
+    for j in reversed(range(1, len(observations))):
+        Z[j - 1] = T2[Z[j], j]
+        X[j - 1] = states[Z[j - 1]]
 
     return X
 
