@@ -91,9 +91,10 @@ class AuxiliaryVariable(variable.Variable):
             An auxiliary variable, sampled with conditional distribution.
 
         Raises:
-            err: If an error is raised while computing the approximate log likelihood that is not recognised, it is
+            RecursionError: If an error is raised while computing the approximate log likelihood that is not recognised, it is
                 passed on to the user.
-
+            OverflowError: If an error is raised while computing the approximate log likelihood that is not recognised, it is
+                passed on to the user.
         """
         # TODO: check if we can simplify this
         if count <= 0:
