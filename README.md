@@ -15,6 +15,14 @@ including efficient beam sampling for the latent sequence resampling steps,
 and multithreading when possible for parameter resampling.
 
 
+## Warning
+
+We now recommend using `PyMC` for Bayesian hidden Markov models. You can find some experimental
+scripts in the `experiments` directory for doing this. Because `PyMC` is better maintained, you
+can expect better support, and more flexibility in model specification. It may lack some
+idiosyncratic sampling optimizations, but is probably a better choice for most users.
+
+
 ## Installation
 
 The current version is development only, and installation is only recommended for
